@@ -32,7 +32,7 @@ You will need Python 3 and its package manager, pip, installed on your system.
 
 1.  **Clone the repo**
     ```sh
-    git clone https://github.com/your_username/report-engine.git
+    https://github.com/nathanfx330/Report-Engine.git
     ```
 2.  **Navigate to the project directory**
     ```sh
