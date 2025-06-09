@@ -1,5 +1,5 @@
 /* static/css/style.css */
-/* Note: The @import from Google Fonts is now handled by a <link> in index.html */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@700&family=Open+Sans:wght@400;600&display=swap');
 
 :root {
     --bg-color: #121212;
