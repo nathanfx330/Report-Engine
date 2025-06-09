@@ -75,23 +75,9 @@ Planned features:
 
 - [ ] Basic local user accounts (optional)
 - [ ] LLM API integration
-- [ ] PDF / DOCX export
 - [ ] Visual graph of character/event relationships
 
-See the [issue tracker](https://github.com/your_username/report-engine/issues) for bugs and requests.
-
----
-
-## Contributing
-
-1. Fork the repo
-2. Create a feature branch  
-   `git checkout -b feature/my-feature`
-3. Commit your changes  
-   `git commit -m "Describe the change"`
-4. Push to GitHub  
-   `git push origin feature/my-feature`
-5. Open a pull request
+--i
 
 Issues and suggestions are also welcome. No ceremony required.
 
@@ -120,8 +106,3 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN  
 THE SOFTWARE.
 
----
-
-## Acknowledgments
-
-Built for practical use. Refined by iteration. Feedback welcome.
