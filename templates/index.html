@@ -1,0 +1,111 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Report Engine</title>
+    
+    <!-- New Google Fonts link for Inter (branding) and Open Sans (body) -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@700&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <header class="main-header">
+        <div class="logo-area">
+            <div class="logo">Report Engine</div>
+            <div id="current-scenario-name" class="session-name">{{ session_name or 'New Scenario' }}</div>
+        </div>
+        <div class="header-controls">
+            <span id="autosave-indicator"></span>
+            <button id="recent-btn" class="btn btn-secondary">Recent</button>
+            <button id="save-btn" class="btn btn-primary">Save</button>
+        </div>
+    </header>
+
+    <div id="main-content">
+        <div class="main-container">
+            <div class="events-column">
+                <div id="event-blocks-container"></div>
+                <button type="button" id="add-event-btn" class="btn btn-secondary">+ Add Event Block</button>
+            </div>
+            <div class="sidebar-column">
+                <div class="entity-manager panel">
+                    <h2>Entities</h2>
+                    <div id="entity-list"></div>
+                    <div class="add-item-form">
+                        <input type="text" id="new-entity-name" placeholder="Entity Name">
+                        <select id="new-entity-type"><option value="Person">Person</option><option value="Organization">Organization</option></select>
+                        <button type="button" id="add-entity-btn" class="btn btn-secondary full-width">+ Add Entity</button>
+                    </div>
+                </div>
+                <div class="location-manager panel">
+                    <h2>Locations</h2>
+                    <div id="location-list"></div>
+                    <div class="add-item-form">
+                        <input type="text" id="new-location-name" placeholder="Location Name">
+                        <button type="button" id="add-location-btn" class="btn btn-secondary full-width">+ Add Location</button>
+                    </div>
+                </div>
+                <div class="controls-panel panel">
+                    <h2>Generate Prompt</h2>
+                    <div class="form-group">
+                        <label for="style-select">Prompt Style:</label>
+                        <select id="style-select">
+                            <option value="narrative">Coherent Narrative</option>
+                            <option value="timeline">Investigative Timeline</option>
+                            <option value="script">Multi-Scene Script</option>
+                            <option value="report">Consolidated Incident Report</option>
+                        </select>
+                    </div>
+                    <button type="button" id="generate-btn" class="btn btn-primary full-width">Generate Master Prompt</button>
+                </div>
+            </div>
+        </div>
+        <div class="results-container">
+            <h2>Your Generated Master Prompt</h2>
+            <textarea id="prompt-output" readonly></textarea>
+            <button type="button" id="copy-btn" class="btn btn-secondary">Copy to Clipboard</button>
+        </div>
+    </div>
+
+    <!-- MODALS -->
+    <div id="save-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2>Save Scenario</h2>
+            <p>Enter a name for this scenario snapshot.</p>
+            <input type="text" id="scenario-name-input" placeholder="e.g., Q3 Incident Report">
+            <div class="modal-actions">
+                <button type="button" id="cancel-save-btn" class="btn btn-secondary">Cancel</button>
+                <button type="button" id="confirm-save-btn" class="btn btn-primary">Save Snapshot</button>
+            </div>
+        </div>
+    </div>
+    <div id="recent-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2>Recent Scenarios</h2>
+            <div id="recent-scenarios-list"></div>
+            <div class="modal-actions"><button type="button" id="close-recent-btn" class="btn btn-secondary">Close</button></div>
+        </div>
+    </div>
+
+    <!-- TEMPLATES -->
+    <template id="event-block-template">
+        <div class="event-block">
+            <button type="button" class="btn btn-danger delete-block-btn">×</button>
+            <h3>Event</h3>
+            <div class="form-grid">
+                <div class="form-group full-width"><label>Who was involved?</label><select class="who" multiple></select></div>
+                <div class="form-group"><label>What happened?</label><input type="text" class="what" placeholder="A significant action..."></div>
+                <div class="form-group"><label>Where?</label><select class="where"></select></div>
+                <div class="form-group"><label>When?</label><input type="date" class="when"></div>
+                <div class="form-group full-width"><label>Why? (Motivation/Cause)</label><input type="text" class="why" placeholder="The reason..."></div>
+            </div>
+        </div>
+    </template>
+    
+    <script> const loaded_data_string = {{ loaded_data|tojson }}; </script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
