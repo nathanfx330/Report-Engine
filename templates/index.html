@@ -5,10 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Report Engine</title>
-    
-    <!-- New Google Fonts link for Inter (branding) and Open Sans (body) -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@700&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet">
-    
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
@@ -19,7 +16,10 @@
         </div>
         <div class="header-controls">
             <span id="autosave-indicator"></span>
-            <button id="recent-btn" class="btn btn-secondary">Recent</button>
+            <button id="import-btn" class="btn btn-secondary">Import JSON</button>
+            <button id="export-btn" class="btn btn-secondary">Export JSON</button>
+            <!-- UPDATED BUTTON ID AND TEXT -->
+            <button id="saved-btn" class="btn btn-secondary">Saved</button>
             <button id="save-btn" class="btn btn-primary">Save</button>
         </div>
     </header>
@@ -82,11 +82,12 @@
             </div>
         </div>
     </div>
-    <div id="recent-modal" class="modal-overlay">
+    <!-- UPDATED MODAL ID, TITLE, AND LIST ID -->
+    <div id="saved-modal" class="modal-overlay">
         <div class="modal-content">
-            <h2>Recent Scenarios</h2>
-            <div id="recent-scenarios-list"></div>
-            <div class="modal-actions"><button type="button" id="close-recent-btn" class="btn btn-secondary">Close</button></div>
+            <h2>Saved Scenarios</h2>
+            <div id="saved-scenarios-list"></div>
+            <div class="modal-actions"><button type="button" id="close-saved-btn" class="btn btn-secondary">Close</button></div>
         </div>
     </div>
 
@@ -104,6 +105,8 @@
             </div>
         </div>
     </template>
+    
+    <input type="file" id="import-file-input" style="display: none;" accept=".json">
     
     <script> const loaded_data_string = {{ loaded_data|tojson }}; </script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
