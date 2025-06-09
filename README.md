@@ -77,7 +77,7 @@ Planned features:
 - [ ] LLM API integration
 - [ ] Visual graph of character/event relationships
 
---i
+---
 
 Issues and suggestions are also welcome. No ceremony required.
 
