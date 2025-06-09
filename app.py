@@ -56,40 +56,25 @@ def load_scenario(scenario_id):
 @app.route('/api/generate-prompt', methods=['POST'])
 def api_generate_prompt():
     data = request.json
-    style = data.get('style')
-    scenario = data.get('scenario', {})
+    style, scenario = data.get('style'), data.get('scenario', {})
+    entities, locations, events = scenario.get('entities', []), scenario.get('locations', []), scenario.get('events', [])
+    instruction = PROMPT_STYLES.get(style, "Summarize...")
     
-    entities = scenario.get('entities', [])
-    locations = scenario.get('locations', [])
-    events = scenario.get('events', [])
-
-    instruction = PROMPT_STYLES.get(style, "Summarize the following information.")
-    
-    dramatis_personae_parts = []
-    if entities:
-        dramatis_personae_parts.append("--- Dramatis Personae ---")
-        dramatis_personae_parts.extend([f"- {e['name']} ({e['type']})" for e in entities])
-        
-    key_locations_parts = []
-    if locations:
-        key_locations_parts.append("--- Key Locations ---")
-        key_locations_parts.extend([f"- {l['name']}" for l in locations])
-        
-    events_list_parts = []
+    d_parts = [f"--- Dramatis Personae ---"] + [f"- {e['name']} ({e['type']})" for e in entities] if entities else []
+    l_parts = [f"--- Key Locations ---"] + [f"- {l['name']}" for l in locations] if locations else []
+    e_parts = [f"--- Sequence of Events ---"]
     if events:
-        events_list_parts.append("--- Sequence of Events ---")
         for i, event in enumerate(events, 1):
-            who_str = ", ".join(event.get('who', [])) or "N/A"
-            events_list_parts.append(f"Event #{i}:\n- Involved: {who_str}\n- What: {event.get('what', 'N/A')}\n- When: {event.get('when', 'N/A')}\n- Where: {event.get('where', 'N/A')}\n- Why/Motivation: {event.get('why', 'N/A')}")
+            who = ", ".join(event.get('who', [])) or "N/A"
+            e_parts.append(f"Event #{i}:\n- Involved: {who}\n- What: {event.get('what', 'N/A')}\n- When: {event.get('when', 'N/A')}\n- Where: {event.get('where', 'N/A')}\n- Why/Motivation: {event.get('why', 'N/A')}")
     
-    # Cleanly join the parts, avoiding extra newlines if a section is empty
     all_parts = [instruction]
-    if dramatis_personae_parts: all_parts.append("\n".join(dramatis_personae_parts))
-    if key_locations_parts: all_parts.append("\n".join(key_locations_parts))
-    if events and events_list_parts: all_parts.append("\n".join(events_list_parts))
+    if d_parts: all_parts.append("\n".join(d_parts))
+    if l_parts: all_parts.append("\n".join(l_parts))
+    if events and len(e_parts) > 1: all_parts.append("\n".join(e_parts))
     
-    final_prompt = "\n\n".join(all_parts)
-    return jsonify({'prompt': final_prompt})
+    prompt = "\n\n".join(all_parts)
+    return jsonify({'prompt': prompt})
 
 @app.route('/api/autosave', methods=['POST'])
 def handle_autosave():
@@ -99,7 +84,6 @@ def handle_autosave():
     if session:
         session.content_json = json.dumps(data)
     else:
-        # Create the very first autosave with a timestamped name
         name = f"Auto-save @ {datetime.utcnow().strftime('%b %d, %H:%M')}"
         session = Scenario(name=name, is_autosave=True, content_json=json.dumps(data))
         db.session.add(session)
@@ -117,9 +101,12 @@ def handle_save():
     db.session.commit()
     return jsonify({'status': 'success', 'id': new_scenario.id})
 
-@app.route('/api/recent-scenarios')
-def get_recent_scenarios():
-    scenarios = Scenario.query.filter_by(is_autosave=False).order_by(Scenario.last_updated.desc()).limit(10).all()
+# --- UPDATED API ROUTE ---
+@app.route('/api/saved-scenarios')
+def get_saved_scenarios():
+    """Returns a list of ALL named scenarios, most recent first."""
+    # The .limit(10) has been removed.
+    scenarios = Scenario.query.filter_by(is_autosave=False).order_by(Scenario.last_updated.desc()).all()
     return jsonify([{'id': s.id, 'name': s.name, 'last_updated': s.last_updated.strftime('%b %d, %Y %H:%M UTC')} for s in scenarios])
 
 @app.route('/api/delete/<int:scenario_id>', methods=['POST'])
