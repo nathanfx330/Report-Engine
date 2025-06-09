@@ -79,8 +79,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return newBlock;
     };
 
-    // --- INITIALIZATION ---
+    // --- INITIALIZATION & IMPORT/EXPORT ---
     const initializeWorkspace = (data) => {
+        document.getElementById('entity-list').innerHTML = '';
+        document.getElementById('location-list').innerHTML = '';
+        document.getElementById('event-blocks-container').innerHTML = '';
+        eventCounter = 0;
         if (!data) return addEventBlock();
         data.entities?.forEach(e => addToList('entity-list', e.name, e.type));
         data.locations?.forEach(l => addToList('location-list', l.name));
@@ -98,28 +102,55 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!data.events || data.events.length === 0) addEventBlock();
     };
 
+    const exportScenario = () => {
+        const data = getWorkspaceData();
+        const jsonString = JSON.stringify(data, null, 2);
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+        a.href = url;
+        a.download = `report-engine-scenario-${timestamp}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    const importScenario = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const importedData = JSON.parse(e.target.result);
+                if (typeof importedData !== 'object' || !('entities' in importedData) || !('events' in importedData)) {
+                    throw new Error("Invalid scenario file format.");
+                }
+                if (confirm("This will replace your current workspace. Are you sure?")) {
+                    initializeWorkspace(importedData);
+                    sessionNameEl.textContent = `Imported: ${file.name}`;
+                    autoSave(true);
+                }
+            } catch (error) { alert(`Error reading file: ${error.message}`); }
+        };
+        reader.readAsText(file);
+        event.target.value = '';
+    };
+
     // --- EVENT LISTENERS ---
     document.getElementById('add-entity-btn').addEventListener('click', () => {
         const nameInput = document.getElementById('new-entity-name');
-        if (nameInput.value.trim()) {
-            addToList('entity-list', nameInput.value.trim(), document.getElementById('new-entity-type').value);
-            nameInput.value = ''; updateAllDropdowns(); debouncedAutoSave();
-        }
+        if (nameInput.value.trim()) { addToList('entity-list', nameInput.value.trim(), document.getElementById('new-entity-type').value); nameInput.value = ''; updateAllDropdowns(); debouncedAutoSave(); }
     });
     document.getElementById('add-location-btn').addEventListener('click', () => {
         const nameInput = document.getElementById('new-location-name');
-        if (nameInput.value.trim()) {
-            addToList('location-list', nameInput.value.trim());
-            nameInput.value = ''; updateAllDropdowns(); debouncedAutoSave();
-        }
+        if (nameInput.value.trim()) { addToList('location-list', nameInput.value.trim()); nameInput.value = ''; updateAllDropdowns(); debouncedAutoSave(); }
     });
     document.getElementById('add-event-btn').addEventListener('click', () => { addEventBlock(); debouncedAutoSave(); });
 
     document.getElementById('main-content').addEventListener('click', (e) => {
-        if (e.target.matches('.item .btn-danger') || e.target.matches('.event-block .delete-block-btn')) {
-            e.target.closest('.item, .event-block').remove();
-            updateAllDropdowns(); debouncedAutoSave();
-        }
+        if (e.target.matches('.item .btn-danger') || e.target.matches('.event-block .delete-block-btn')) { e.target.closest('.item, .event-block').remove(); updateAllDropdowns(); debouncedAutoSave(); }
     });
     document.getElementById('main-content').addEventListener('input', debouncedAutoSave);
 
@@ -135,21 +166,16 @@ document.addEventListener('DOMContentLoaded', () => {
             promptOutput.value = response.prompt;
             promptOutput.style.height = 'auto';
             promptOutput.style.height = (promptOutput.scrollHeight) + 'px';
-        } else {
-            promptOutput.value = "Error: Could not generate prompt.";
-        }
+        } else { promptOutput.value = "Error: Could not generate prompt."; }
     });
     
-    document.getElementById('copy-btn').addEventListener('click', e => {
-        navigator.clipboard.writeText(document.getElementById('prompt-output').value).then(() => {
-            e.target.textContent = 'Copied!';
-            setTimeout(() => e.target.textContent = 'Copy to Clipboard', 2000);
-        });
-    });
+    document.getElementById('copy-btn').addEventListener('click', e => { navigator.clipboard.writeText(document.getElementById('prompt-output').value).then(() => { e.target.textContent = 'Copied!'; setTimeout(() => e.target.textContent = 'Copy to Clipboard', 2000); }); });
+    document.getElementById('export-btn').addEventListener('click', exportScenario);
+    document.getElementById('import-btn').addEventListener('click', () => document.getElementById('import-file-input').click());
+    document.getElementById('import-file-input').addEventListener('change', importScenario);
 
-    // --- MODAL EVENT LISTENERS ---
     const saveModal = document.getElementById('save-modal');
-    const recentModal = document.getElementById('recent-modal');
+    const savedModal = document.getElementById('saved-modal'); // <-- Updated
     document.getElementById('save-btn').addEventListener('click', () => saveModal.style.display = 'flex');
     document.getElementById('cancel-save-btn').addEventListener('click', () => saveModal.style.display = 'none');
     
@@ -159,22 +185,23 @@ document.addEventListener('DOMContentLoaded', () => {
             await apiCall('/api/save', 'POST', { name, content: getWorkspaceData() });
             saveModal.style.display = 'none';
             document.getElementById('scenario-name-input').value = '';
-            document.getElementById('current-scenario-name').textContent = `Editing: ${name}`;
+            sessionNameEl.textContent = `Editing: ${name}`;
         }
     });
-
-    document.getElementById('recent-btn').addEventListener('click', async () => {
-        const scenarios = await apiCall('/api/recent-scenarios');
-        const listDiv = document.getElementById('recent-scenarios-list');
+    
+    // --- UPDATED LISTENER ---
+    document.getElementById('saved-btn').addEventListener('click', async () => {
+        const scenarios = await apiCall('/api/saved-scenarios');
+        const listDiv = document.getElementById('saved-scenarios-list');
         listDiv.innerHTML = scenarios && scenarios.length > 0
             ? scenarios.map(s => `<div class="recent-item"><a href="/load/${s.id}">${s.name}</a><span>${s.last_updated}</span><button type="button" class="btn btn-danger" data-id="${s.id}">Delete</button></div>`).join('')
             : '<p>No saved scenarios found.</p>';
-        recentModal.style.display = 'flex';
+        savedModal.style.display = 'flex';
     });
     
-    document.getElementById('close-recent-btn').addEventListener('click', () => recentModal.style.display = 'none');
+    document.getElementById('close-saved-btn').addEventListener('click', () => savedModal.style.display = 'none');
     
-    recentModal.addEventListener('click', async (e) => {
+    savedModal.addEventListener('click', async (e) => {
         if (e.target.matches('.recent-item .btn-danger')) {
             if (confirm('Are you sure you want to delete this scenario?')) {
                 await apiCall(`/api/delete/${e.target.dataset.id}`, 'POST');
@@ -184,14 +211,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- INITIALIZE WORKSPACE ---
-    // 'loaded_data_string' is injected by Flask template
     let initialData = null;
     if (loaded_data_string) {
-        try {
-            initialData = JSON.parse(loaded_data_string);
-        } catch (error) {
-            console.error("Failed to parse loaded data from server:", error);
-        }
+        try { initialData = JSON.parse(loaded_data_string); } 
+        catch (error) { console.error("Failed to parse loaded data from server:", error); }
     }
     initializeWorkspace(initialData);
 });
