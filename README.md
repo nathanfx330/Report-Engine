@@ -80,12 +80,6 @@ On the first run, a `project.db` file will be created inside an `instance/` fold
 
 ---
 
-## Contributing
-
-Issues and pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
-
----
-
 ## License
 
 MIT License  
