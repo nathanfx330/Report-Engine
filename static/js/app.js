@@ -215,7 +215,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const selectElement = group.querySelector('.who');
             const selectedValues = Array.from(selectElement.selectedOptions).map(opt => opt.value);
             
-            // THE ONLY CHANGE IS ON THE NEXT LINE
             selectElement.innerHTML = state.entities.map(e => 
                 `<option value="${e.name}">${e.name} (${e.type})</option>`
             ).join('');
@@ -392,12 +391,37 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    // --- IMPORT / EXPORT with METADATA ---
     const exportData = () => {
-        const dataStr = JSON.stringify(gatherStateFromDOM(), null, 2);
+        const scenarioData = gatherStateFromDOM();
+        const exportObject = {
+            meta: {
+                exported_at: new Date().toISOString(),
+                app_version: "1.0"
+            },
+            scenario_data: scenarioData
+        };
+        
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const seconds = String(now.getSeconds()).padStart(2, '0');
+        const timestamp = `${year}${month}${day}_${hours}${minutes}${seconds}`;
+        const filename = `report-engine_${timestamp}.json`;
+
+        const dataStr = JSON.stringify(exportObject, null, 2);
         const blob = new Blob([dataStr], { type: "application/json" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url; a.download = 'report-engine-scenario.json'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     };
 
     const importData = (event) => {
@@ -405,18 +429,25 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!file) return;
         const reader = new FileReader();
         reader.onload = (e) => {
-            try { const importedData = JSON.parse(e.target.result); loadState(importedData); } 
-            catch (err) { alert('Error: Invalid JSON file.'); console.error(err); }
+            try {
+                const importedData = JSON.parse(e.target.result);
+                loadState(importedData);
+            } catch (err) {
+                alert('Error: Invalid JSON file.');
+                console.error(err);
+            }
         };
         reader.readAsText(file);
         event.target.value = null;
     };
 
     const loadState = (data) => {
+        const scenarioData = (data.scenario_data && data.meta) ? data.scenario_data : data;
+
         state = {
-            entities: data.entities || [],
-            locations: data.locations || [],
-            events: data.events || []
+            entities: scenarioData.entities || [],
+            locations: scenarioData.locations || [],
+            events: scenarioData.events || []
         };
         renderAll();
         
