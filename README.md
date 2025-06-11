@@ -2,8 +2,6 @@
 
 A Flask-based web application for organizing narrative data and building context-rich prompts for large language models (LLMs).
 
-[Screenshot of the Report Engine interface]
-
 ---
 
 ## About The Project
