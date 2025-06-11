@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Report Engine</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@700&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
@@ -16,9 +17,10 @@
         </div>
         <div class="header-controls">
             <span id="autosave-indicator"></span>
+            <button id="manage-prompts-btn" class="btn btn-secondary">Prompts</button>
+            <button id="new-scenario-btn" class="btn btn-secondary">New Scenario</button>
             <button id="import-btn" class="btn btn-secondary">Import JSON</button>
             <button id="export-btn" class="btn btn-secondary">Export JSON</button>
-            <!-- UPDATED BUTTON ID AND TEXT -->
             <button id="saved-btn" class="btn btn-secondary">Saved</button>
             <button id="save-btn" class="btn btn-primary">Save</button>
         </div>
@@ -53,10 +55,7 @@
                     <div class="form-group">
                         <label for="style-select">Prompt Style:</label>
                         <select id="style-select">
-                            <option value="narrative">Coherent Narrative</option>
-                            <option value="timeline">Investigative Timeline</option>
-                            <option value="script">Multi-Scene Script</option>
-                            <option value="report">Consolidated Incident Report</option>
+                            <option>Loading prompts...</option>
                         </select>
                     </div>
                     <button type="button" id="generate-btn" class="btn btn-primary full-width">Generate Master Prompt</button>
@@ -82,12 +81,39 @@
             </div>
         </div>
     </div>
-    <!-- UPDATED MODAL ID, TITLE, AND LIST ID -->
     <div id="saved-modal" class="modal-overlay">
         <div class="modal-content">
             <h2>Saved Scenarios</h2>
             <div id="saved-scenarios-list"></div>
             <div class="modal-actions"><button type="button" id="close-saved-btn" class="btn btn-secondary">Close</button></div>
+        </div>
+    </div>
+    <div id="new-scenario-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2>Start a New Scenario?</h2>
+            <p>Your current work is auto-saved. How would you like to proceed?</p>
+            <div class="modal-actions">
+                <button type="button" id="cancel-new-scenario-btn" class="btn btn-secondary">Cancel</button>
+                <button type="button" id="confirm-discard-and-new-btn" class="btn btn-danger-outline">Discard & Start New</button>
+                <button type="button" id="confirm-save-and-new-btn" class="btn btn-primary">Save & Start New</button>
+            </div>
+        </div>
+    </div>
+    <div id="prompts-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2>Manage Prompts</h2>
+            <div id="prompt-list"></div>
+            <div class="add-prompt-container">
+                <h3>Add New Prompt</h3>
+                <form id="add-prompt-form">
+                    <input type="text" id="new-prompt-name" placeholder="Prompt Name (e.g., 'Poetic Summary')" required>
+                    <textarea id="new-prompt-instruction" placeholder="Enter the detailed instruction for the AI..." rows="4" required></textarea>
+                    <button type="submit" class="btn btn-primary full-width">+ Add Custom Prompt</button>
+                </form>
+            </div>
+            <div class="modal-actions">
+                <button type="button" id="close-prompts-btn" class="btn btn-secondary">Close</button>
+            </div>
         </div>
     </div>
 
@@ -97,7 +123,12 @@
             <button type="button" class="btn btn-danger delete-block-btn">×</button>
             <h3>Event</h3>
             <div class="form-grid">
-                <div class="form-group full-width"><label>Who was involved?</label><select class="who" multiple></select></div>
+                <div class="form-group full-width who-selector-group">
+                    <label>Who was involved?</label>
+                    <div class="selected-pills"></div>
+                    <input type="text" class="who-search-input" placeholder="Search to filter list below...">
+                    <select class="who" multiple></select>
+                </div>
                 <div class="form-group"><label>What happened?</label><input type="text" class="what" placeholder="A significant action..."></div>
                 <div class="form-group"><label>Where?</label><select class="where"></select></div>
                 <div class="form-group"><label>When?</label><input type="date" class="when"></div>
