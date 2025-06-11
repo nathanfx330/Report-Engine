@@ -215,8 +215,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const selectElement = group.querySelector('.who');
             const selectedValues = Array.from(selectElement.selectedOptions).map(opt => opt.value);
             
+            // THE ONLY CHANGE IS ON THE NEXT LINE
             selectElement.innerHTML = state.entities.map(e => 
-                `<option value="${e.name}">${e.name}</option>`
+                `<option value="${e.name}">${e.name} (${e.type})</option>`
             ).join('');
 
             Array.from(selectElement.options).forEach(opt => {
