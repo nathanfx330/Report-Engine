@@ -30,7 +30,16 @@
         <div class="main-container">
             <div class="events-column">
                 <div id="event-blocks-container"></div>
-                <button type="button" id="add-event-btn" class="btn btn-secondary">+ Add Event Block</button>
+                <!-- *** MODIFIED BLOCK: Added a container and the new Sort button *** -->
+                <div class="event-actions-container">
+                    <button type="button" id="sort-events-btn" class="btn btn-secondary">
+                        <i class="fas fa-sort-amount-down"></i> Sort by Date
+                    </button>
+                    <button type="button" id="add-event-btn" class="btn btn-secondary">
+                        + Add Event Block
+                    </button>
+                </div>
+                <!-- *** END OF MODIFIED BLOCK *** -->
             </div>
             <div class="sidebar-column">
                 <div class="entity-manager panel">
