@@ -4,6 +4,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let state = { entities: [], locations: [], events: [] };
     let autosaveTimeout;
     let startNewAfterSave = false;
+    // *** 1. ADDED: State variable to track sort direction. 'desc' means the first click will sort descending. ***
+    let currentSortDirection = 'desc';
 
     // --- DOM ELEMENT CACHE ---
     const dom = {
@@ -48,6 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
         addPromptForm: document.getElementById('add-prompt-form'),
         newPromptName: document.getElementById('new-prompt-name'),
         newPromptInstruction: document.getElementById('new-prompt-instruction'),
+        sortEventsBtn: document.getElementById('sort-events-btn'),
     };
 
     // --- PROMPT MANAGEMENT FUNCTIONS ---
@@ -292,6 +295,52 @@ document.addEventListener('DOMContentLoaded', () => {
             triggerAutosave();
         }
     };
+    
+    // *** 2. MODIFIED: The entire sort function is replaced with the toggling version ***
+    const sortEventsByDate = () => {
+        const eventBlocks = Array.from(dom.eventBlocksContainer.children);
+        const icon = dom.sortEventsBtn.querySelector('i');
+
+        // Capture the direction for this sort operation
+        const sortDirectionThisClick = currentSortDirection;
+
+        eventBlocks.sort((blockA, blockB) => {
+            const dateA = blockA.querySelector('.when').value;
+            const dateB = blockB.querySelector('.when').value;
+
+            // Events without a date are always pushed to the end
+            if (!dateA) return 1;
+            if (!dateB) return -1;
+
+            // Sort based on the captured direction
+            if (sortDirectionThisClick === 'asc') {
+                return new Date(dateA) - new Date(dateB); // Oldest to Newest
+            } else {
+                return new Date(dateB) - new Date(dateA); // Newest to Oldest
+            }
+        });
+
+        // Re-append sorted elements to the DOM
+        eventBlocks.forEach(block => dom.eventBlocksContainer.appendChild(block));
+
+        // Update UI to reflect the sort that just happened
+        // Note: The icons are 'down' for descending (newest first, like a pile)
+        // and 'up' for ascending (oldest first, building up). Font Awesome's logic.
+        if (sortDirectionThisClick === 'desc') {
+            dom.sortEventsBtn.title = "Sorted: Newest to Oldest. Click to sort ascending.";
+            icon.classList.remove('fa-sort-amount-down');
+            icon.classList.add('fa-sort-amount-up');
+        } else { // 'asc'
+            dom.sortEventsBtn.title = "Sorted: Oldest to Newest. Click to sort descending.";
+            icon.classList.remove('fa-sort-amount-up');
+            icon.classList.add('fa-sort-amount-down');
+        }
+
+        // Flip the direction for the *next* click
+        currentSortDirection = (sortDirectionThisClick === 'asc') ? 'desc' : 'asc';
+
+        triggerAutosave();
+    };
 
     // --- API & MODAL HANDLERS ---
     const triggerAutosave = () => {
@@ -480,6 +529,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- EVENT LISTENERS SETUP ---
     const setupEventListeners = () => {
+        dom.sortEventsBtn.addEventListener('click', sortEventsByDate);
         dom.addEntityBtn.addEventListener('click', addEntity);
         dom.addLocationBtn.addEventListener('click', addLocation);
         dom.addEventBtn.addEventListener('click', () => addEventBlock());
