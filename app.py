@@ -1,179 +1,296 @@
-# app.py
-import json
-from flask import Flask, render_template, request, jsonify
-from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
-import os
+/**
+ * Report Engine Frontend Application
+ * Uses the Module Pattern for robust, private state management.
+ */
+const ReportEngine = (function() {
 
-# --- App & Database Configuration ---
-app = Flask(__name__)
-basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'instance', 'project.db')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
+    // --- 1. STATE ---
+    const state = {
+        entities: [], locations: [], events: [], prompts: [],
+        filterTerm: '', isDirty: false, sortDirection: 'asc'
+    };
 
-# --- Database Models ---
-class Scenario(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(150), nullable=False)
-    content_json = db.Column(db.Text, nullable=False)
-    last_updated = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    is_autosave = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    // --- 2. DOM SELECTORS ---
+    const UI = {};
 
-class PromptStyle(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), unique=True, nullable=False)
-    instruction = db.Column(db.Text, nullable=False)
-    is_deletable = db.Column(db.Boolean, nullable=False, default=True)
+    // --- 3. VIEW ---
+    const View = {
+        init() {
+            UI.sessionName = document.getElementById('session-name');
+            UI.autosaveIndicator = document.getElementById('autosave-indicator');
+            UI.eventsContainer = document.getElementById('events-container');
+            UI.entityList = document.getElementById('entity-list');
+            UI.locationList = document.getElementById('location-list');
+            UI.promptSelect = document.getElementById('prompt-select');
+            UI.filterInput = document.getElementById('filter-input');
+            UI.clearFilterBtn = document.getElementById('clear-filter-btn');
+            UI.resultsContainer = document.getElementById('results-container');
+            UI.promptOutput = document.getElementById('prompt-output');
+            UI.modalContainer = document.getElementById('modal-container');
+            UI.eventTemplate = document.getElementById('event-block-template');
+            UI.addEntityForm = document.getElementById('add-entity-form');
+            UI.addLocationForm = document.getElementById('add-location-form');
+            UI.importFileInput = document.getElementById('import-file-input');
+            UI.sortIcon = document.getElementById('sort-icon');
+        },
+        renderAll() { this.renderEntities(); this.renderLocations(); this.renderEvents(); },
+        renderEvents() {
+            UI.eventsContainer.innerHTML = '';
+            const lowerFilter = state.filterTerm.toLowerCase();
+            const filteredEvents = state.events.filter(event => {
+                if (!lowerFilter) return true;
+                const entityMap = new Map(state.entities.map(e => [e.id, e.name]));
+                const locationMap = new Map(state.locations.map(l => [l.id, l.name]));
+                const who = event.who.map(id => entityMap.get(id) || '').join(' ').toLowerCase();
+                const where = locationMap.get(event.where)?.toLowerCase() || '';
+                return event.what.toLowerCase().includes(lowerFilter) ||
+                       event.why.toLowerCase().includes(lowerFilter) ||
+                       who.includes(lowerFilter) ||
+                       where.includes(lowerFilter);
+            });
+            if (filteredEvents.length > 0) {
+                filteredEvents.forEach(event => UI.eventsContainer.appendChild(this.createEventElement(event)));
+            } else {
+                UI.eventsContainer.innerHTML = `<p style="text-align:center; color: var(--text-secondary);">No events to display.</p>`;
+            }
+        },
+        createEventElement(event) {
+            const clone = UI.eventTemplate.content.cloneNode(true);
+            const block = clone.querySelector('.event-block');
+            block.dataset.id = event.id;
+            block.querySelector('[name="what"]').value = event.what;
+            block.querySelector('[name="when"]').value = event.when;
+            block.querySelector('[name="why"]').value = event.why;
+            const whereSelect = block.querySelector('[name="where"]');
+            whereSelect.innerHTML = '<option value="">Select...</option>';
+            state.locations.forEach(loc => {
+                const option = new Option(loc.name, loc.id);
+                option.selected = loc.id === event.where;
+                whereSelect.appendChild(option);
+            });
+            this.updateWhoSelector(block, event.who);
+            return block;
+        },
+        updateWhoSelector(block, selectedIds) {
+            const whoSelect = block.querySelector('.who');
+            whoSelect.innerHTML = '';
+            state.entities.forEach(entity => {
+                const option = new Option(`${entity.name} (${entity.type})`, entity.id);
+                option.selected = selectedIds.includes(entity.id);
+                whoSelect.appendChild(option);
+            });
+            this.renderPills(block, selectedIds);
+        },
+        renderPills(block, selectedIds) {
+            const pillsContainer = block.querySelector('.selected-pills');
+            pillsContainer.innerHTML = '';
+            selectedIds.forEach(id => {
+                const entity = state.entities.find(e => e.id === id);
+                if (entity) {
+                    const pill = document.createElement('span');
+                    pill.className = 'pill';
+                    pill.innerHTML = `${entity.name} <span class="remove-pill" data-action="remove-pill" data-id="${entity.id}">×</span>`;
+                    pillsContainer.appendChild(pill);
+                }
+            });
+        },
+        renderEntities() {
+            UI.entityList.innerHTML = '';
+            state.entities.forEach(entity => {
+                const item = document.createElement('div');
+                item.className = 'item';
+                item.innerHTML = `<span>${entity.name} <small>(${entity.type})</small></span>
+                                  <button class="btn btn-danger" data-action="delete-entity" data-id="${entity.id}">×</button>`;
+                UI.entityList.appendChild(item);
+            });
+        },
+        renderLocations() {
+            UI.locationList.innerHTML = '';
+            state.locations.forEach(loc => {
+                const item = document.createElement('div');
+                item.className = 'item';
+                item.innerHTML = `<span>${loc.name}</span>
+                                 <button class="btn btn-danger" data-action="delete-location" data-id="${loc.id}">×</button>`;
+                UI.locationList.appendChild(item);
+            });
+        },
+        renderPrompts() { UI.promptSelect.innerHTML = ''; state.prompts.forEach(p => UI.promptSelect.add(new Option(p.name, p.id))); },
+        setAutosaveIndicator(text, isError = false) {
+            UI.autosaveIndicator.textContent = text;
+            UI.autosaveIndicator.style.color = isError ? 'var(--danger-color)' : 'var(--text-secondary)';
+            UI.autosaveIndicator.style.opacity = '1';
+            setTimeout(() => UI.autosaveIndicator.style.opacity = '0', 2500);
+        },
+        renderModal({ title, content, actions }) {
+            const actionsHTML = actions.map(a => `<button class="btn ${a.class || 'btn-secondary'}" data-action="${a.action}">${a.text}</button>`).join('');
+            const modalHTML = `
+                <div class="modal-overlay" data-action="close-modal">
+                    <div class="modal-content" data-action="modal-content">
+                        <h2>${title}</h2>
+                        <div class="modal-body">${content}</div>
+                        <div class="modal-actions">${actionsHTML}</div>
+                    </div>
+                </div>`;
+            UI.modalContainer.innerHTML = modalHTML;
+        },
+        renderPromptsModal() {
+            const deletablePrompts = state.prompts.filter(p => p.is_deletable).map(p => `
+                <div class="modal-item">
+                    <div class="icon"><i class="fa fa-user-edit"></i></div>
+                    <div class="modal-item-info"><strong>${p.name}</strong><p>${p.instruction.substring(0, 80)}...</p></div>
+                    <button class="btn btn-danger" data-action="delete-prompt" data-id="${p.id}">×</button>
+                </div>`).join('');
+            const defaultPrompts = state.prompts.filter(p => !p.is_deletable).map(p => `
+                <div class="modal-item">
+                    <div class="icon"><i class="fa fa-lock"></i></div>
+                    <div class="modal-item-info"><strong>${p.name}</strong><p>${p.instruction.substring(0, 80)}...</p></div>
+                </div>`).join('');
+            const content = `<div class="modal-list">${deletablePrompts}${defaultPrompts}</div><div class="modal-add-form"><h3>Add Custom Prompt</h3><form id="add-prompt-form"><div class="form-group"><input name="name" type="text" placeholder="Prompt Name" required></div><div class="form-group"><textarea name="instruction" rows="3" placeholder="AI instruction..." required></textarea></div><button type="submit" class="btn btn-primary full-width">Add Prompt</button></form></div>`;
+            this.renderModal({title: "Manage Prompts", content, actions: [{text: "Close", class: "btn-secondary", action: "close-modal"}] });
+            UI.modalContainer.querySelector('#add-prompt-form').addEventListener('submit', Controller.handleAddPrompt.bind(Controller));
+        },
+        closeModal() { UI.modalContainer.innerHTML = ''; }
+    };
 
-def seed_default_prompts():
-    """Seeds the database with default, non-deletable prompts if they don't exist."""
-    default_prompts = [
-        {"name": "Coherent Narrative", "instruction": "You are a master storyteller. Weave the following series of events into a single, coherent narrative. First, familiarize yourself with the cast of characters, organizations, and key locations provided. Then, use the event list to build the story.", "is_deletable": False},
-        {"name": "Investigative Timeline", "instruction": "You are a meticulous investigator. Based on the entities, locations, and events provided, create a detailed timeline. Start by listing the key players and locations. For each timeline entry, note the involved entities and highlight any connections.", "is_deletable": False},
-        {"name": "Multi-Scene Script", "instruction": "You are a professional screenwriter. Write a script that covers the following events. The 'Dramatis Personae' and 'Locations' sections list your cast and settings. Create new scenes for distinct events.", "is_deletable": False},
-        {"name": "Consolidated Incident Report", "instruction": "You are a security analyst. Consolidate the following incident reports into a single executive summary. The 'Entities of Interest' and 'Relevant Locations' are your subjects and settings. Detail each event chronologically and conclude with a threat assessment.", "is_deletable": False},
-        {"name": "Factual Testimony", "instruction": "You are a witness preparing a compelling, first-person testimony for a formal hearing. Using the provided facts, entities, and events, construct a clear and persuasive statement. Recount the events from your perspective, focusing on factual accuracy and emotional impact where appropriate. Your testimony should be structured logically and be easy to follow.", "is_deletable": False},
-    ]
-    
-    for p in default_prompts:
-        exists = PromptStyle.query.filter_by(name=p['name']).first()
-        if not exists:
-            new_prompt = PromptStyle(name=p['name'], instruction=p['instruction'], is_deletable=p['is_deletable'])
-            db.session.add(new_prompt)
-    db.session.commit()
+    // --- 4. CONTROLLER ---
+    const Controller = {
+        init() { View.init(); this.bindEvents(); this.loadInitialState(); setInterval(this.autosave.bind(this), 5000); },
+        loadInitialState() {
+            const initialState = window.APP_INITIAL_STATE;
+            if (initialState) {
+                const sanitizedData = this.sanitizeImportedData(initialState);
+                state.entities = sanitizedData.entities; state.locations = sanitizedData.locations; state.events = sanitizedData.events;
+            }
+            if (state.events.length === 0) this.addEvent();
+            API.getPrompts().then(prompts => { state.prompts = prompts; View.renderPrompts(); });
+            View.renderAll();
+        },
+        bindEvents() {
+            UI.addEntityForm.addEventListener('submit', this.handleAddEntity.bind(this));
+            UI.addLocationForm.addEventListener('submit', this.handleAddLocation.bind(this));
+            UI.importFileInput.addEventListener('change', this.handleFileImport.bind(this));
+            document.body.addEventListener('click', this.handleClick.bind(this));
+            document.body.addEventListener('input', this.handleInput.bind(this));
+            document.body.addEventListener('change', this.handleChange.bind(this));
+        },
+        handleAddEntity(e) { e.preventDefault(); const form = e.target, data = new FormData(form), name = data.get('name'); if (!name) return; state.entities.push({ id: this.generateId(), name, type: data.get('type') }); state.isDirty = true; View.renderAll(); form.reset(); },
+        handleAddLocation(e) { e.preventDefault(); const form = e.target, data = new FormData(form), name = data.get('name'); if (!name) return; state.locations.push({ id: this.generateId(), name }); state.isDirty = true; View.renderAll(); form.reset(); },
+        handleAddPrompt(e) { e.preventDefault(); const form = e.target, data = new FormData(form), name = data.get('name'), instruction = data.get('instruction'); if (!name || !instruction) return; API.addPrompt({ name, instruction }).then(newPrompt => { state.prompts.push(newPrompt); View.renderPromptsModal(); View.renderPrompts(); }); },
+        handleClick(e) {
+            const target = e.target.closest('[data-action]');
+            if (!target) return;
+            const action = target.dataset.action;
+            if (action === "modal-content") { e.stopPropagation(); return; }
+            const id = target.dataset.id;
+            const actions = {
+                'manage-prompts': () => View.renderPromptsModal(), 'new-scenario': () => this.handleNewScenario(),
+                'save': () => this.handleSave(), 'show-saved': () => this.handleShowSaved(),
+                'close-modal': () => View.closeModal(), 'confirm-save': () => this.confirmSave(),
+                'confirm-discard': () => { API.clearAutosave().then(() => location.reload()); }, 'delete-prompt': () => this.deletePrompt(id),
+                'delete-saved': () => this.deleteSaved(id), 'import-json': () => UI.importFileInput.click(),
+                'export-json': () => this.exportJSON(), 'delete-entity': () => this.deleteEntity(id),
+                'delete-location': () => this.deleteLocation(id), 'add-event': () => this.addEvent(),
+                'sort-events': () => this.sortEvents(), 'delete-event': () => this.deleteEvent(target.closest('.event-block').dataset.id),
+                'generate-prompt': () => this.generatePrompt(), 'copy-prompt': () => navigator.clipboard.writeText(UI.promptOutput.value),
+                'remove-pill': () => { const block = target.closest('.event-block'), whoSelect = block.querySelector('.who'), option = whoSelect.querySelector(`option[value="${id}"]`); if (option) option.selected = false; whoSelect.dispatchEvent(new Event('change', { bubbles: true })); }
+            };
+            if (actions[action]) actions[action]();
+        },
+        handleInput(e) { if (e.target.id === 'filter-input') { state.filterTerm = e.target.value; UI.clearFilterBtn.style.display = state.filterTerm ? 'block' : 'none'; View.renderEvents(); } else if (e.target.closest('.event-block') || e.target.id === 'scenario-name-input') { state.isDirty = true; } },
+        handleChange(e) { const block = e.target.closest('.event-block'); if (!block) return; state.isDirty = true; const event = this.syncEventFromDOM(block); if (e.target.matches('.who')) View.renderPills(block, event.who); },
+        
+        // *** THE DEFINITIVE, INTELLIGENT DATA MIGRATION FIX ***
+        sanitizeImportedData(data) {
+            // First pass: Ensure all entities/locations have string IDs
+            const entities = (data.entities || []).map(e => ({ ...e, id: String(e.id || this.generateId()) }));
+            const locations = (data.locations || []).map(l => ({ ...l, id: String(l.id || this.generateId()) }));
 
-# --- Main Application Routes ---
-@app.route('/')
-def index():
-    autosave_session = Scenario.query.filter_by(is_autosave=True).order_by(Scenario.last_updated.desc()).first()
-    session_name = autosave_session.name if autosave_session else "New Scenario"
-    loaded_data = autosave_session.content_json if autosave_session else None
-    return render_template('index.html', loaded_data=loaded_data, session_name=session_name)
+            // Create lookup maps to convert old name-based relations to new ID-based relations
+            const entityNameToId = new Map(entities.map(e => [e.name, e.id]));
+            const locationNameToId = new Map(locations.map(l => [l.name, l.id]));
 
-@app.route('/load/<int:scenario_id>')
-def load_scenario(scenario_id):
-    scenario = db.get_or_404(Scenario, scenario_id)
-    autosave_session = Scenario.query.filter_by(is_autosave=True).first()
-    autosave_name = f"Editing: {scenario.name}"
-    
-    if not autosave_session:
-        autosave_session = Scenario(name=autosave_name, is_autosave=True, content_json=scenario.content_json)
-        db.session.add(autosave_session)
-    else:
-        autosave_session.content_json = scenario.content_json
-        autosave_session.name = autosave_name
-    db.session.commit()
-    
-    return render_template('index.html', loaded_data=scenario.content_json, session_name=autosave_name)
+            const events = (data.events || []).map(ev => {
+                let newWho = [];
+                if (Array.isArray(ev.who) && ev.who.length > 0) {
+                    const firstWho = ev.who[0];
+                    if (typeof firstWho === 'string' && entityNameToId.has(firstWho)) {
+                        // This is the old, NAME-based format. Migrate names to IDs.
+                        newWho = ev.who.map(name => entityNameToId.get(name)).filter(Boolean);
+                    } else {
+                        // This is the ID-based format. Just ensure IDs are strings.
+                        newWho = ev.who.map(id => String(id));
+                    }
+                }
 
-# --- API Routes ---
-@app.route('/api/generate-prompt', methods=['POST'])
-def api_generate_prompt():
-    data = request.json
-    prompt_id, scenario = data.get('prompt_id'), data.get('scenario', {})
-    
-    prompt_style = db.get_or_404(PromptStyle, prompt_id)
-    instruction = prompt_style.instruction
+                let newWhere = null;
+                if (ev.where) {
+                    if (typeof ev.where === 'string' && locationNameToId.has(ev.where)) {
+                        newWhere = locationNameToId.get(ev.where); // Name-based format
+                    } else {
+                        newWhere = String(ev.where); // ID-based format
+                    }
+                }
+                
+                return { ...ev, id: String(ev.id || this.generateId()), who: newWho, where: newWhere };
+            });
 
-    entities, locations, events = scenario.get('entities', []), scenario.get('locations', []), scenario.get('events', [])
-    d_parts = [f"--- Dramatis Personae ---"] + [f"- {e['name']} ({e['type']})" for e in entities] if entities else []
-    l_parts = [f"--- Key Locations ---"] + [f"- {l['name']}" for l in locations] if locations else []
-    e_parts = [f"--- Sequence of Events ---"]
-    if events:
-        for i, event in enumerate(events, 1):
-            who = ", ".join(event.get('who', [])) or "N/A"
-            e_parts.append(f"Event #{i}:\n- Involved: {who}\n- What: {event.get('what', 'N/A')}\n- When: {event.get('when', 'N/A')}\n- Where: {event.get('where', 'N/A')}\n- Why/Motivation: {event.get('why', 'N/A')}")
-    
-    all_parts = [instruction]
-    if d_parts: all_parts.append("\n".join(d_parts))
-    if l_parts: all_parts.append("\n".join(l_parts))
-    if events and len(e_parts) > 1: all_parts.append("\n".join(e_parts))
-    
-    prompt = "\n\n".join(all_parts)
-    return jsonify({'prompt': prompt})
+            return { entities, locations, events };
+        },
 
-@app.route('/api/autosave', methods=['POST'])
-def handle_autosave():
-    data = request.json
-    session = Scenario.query.filter_by(is_autosave=True).first()
-    if session:
-        session.content_json = json.dumps(data)
-    else:
-        name = f"Auto-save @ {datetime.utcnow().strftime('%b %d, %H:%M')}"
-        session = Scenario(name=name, is_autosave=True, content_json=json.dumps(data))
-        db.session.add(session)
-    db.session.commit()
-    return jsonify({'status': 'success', 'name': session.name})
+        handleFileImport(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const data = JSON.parse(event.target.result);
+                    const sanitizedData = this.sanitizeImportedData(data);
+                    state.entities = sanitizedData.entities; state.locations = sanitizedData.locations; state.events = sanitizedData.events;
+                    state.isDirty = true; View.renderAll();
+                } catch (err) { alert(`Error: Could not import file. ${err.message}`); }
+            };
+            reader.readAsText(file);
+            e.target.value = null;
+        },
+        exportJSON() { this.autosave(); const dataStr = JSON.stringify({ entities: state.entities, locations: state.locations, events: state.events }, null, 2); const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([dataStr], { type: 'application/json' })); link.download = `report-scenario-${Date.now()}.json`; link.click(); URL.revokeObjectURL(link.href); },
+        deletePrompt(id) { if (!confirm("Are you sure?")) return; API.deletePrompt(id).then(() => { state.prompts = state.prompts.filter(p => p.id != id); View.renderPromptsModal(); View.renderPrompts(); }).catch(err => alert(`Error: ${err.message}`)); },
+        deleteEntity(id) { state.entities = state.entities.filter(e => e.id !== id); state.events.forEach(event => event.who = event.who.filter(whoId => whoId !== id)); state.isDirty = true; View.renderAll(); },
+        deleteLocation(id) { state.locations = state.locations.filter(l => l.id !== id); state.events.forEach(event => { if(event.where === id) event.where = null; }); state.isDirty = true; View.renderAll(); },
+        addEvent() { state.events.push({ id: this.generateId(), what: '', when: '', where: null, who: [], why: '' }); state.isDirty = true; View.renderEvents(); },
+        deleteEvent(id) { state.events = state.events.filter(e => e.id !== id); state.isDirty = true; View.renderEvents(); },
+        sortEvents() { const direction = state.sortDirection; state.events.sort((a, b) => { const dateA = new Date(a.when || 0); const dateB = new Date(b.when || 0); return direction === 'asc' ? dateA - dateB : dateB - dateA; }); state.sortDirection = direction === 'asc' ? 'desc' : 'asc'; UI.sortIcon.className = state.sortDirection === 'asc' ? 'fa fa-sort-amount-down' : 'fa fa-sort-amount-up'; state.isDirty = true; View.renderEvents(); },
+        syncEventFromDOM(block) { const event = state.events.find(e => e.id === block.dataset.id); if (!event) return; event.what = block.querySelector('[name="what"]').value; event.when = block.querySelector('[name="when"]').value; event.why = block.querySelector('[name="why"]').value; event.where = block.querySelector('[name="where"]').value; event.who = Array.from(block.querySelector('.who').selectedOptions).map(opt => opt.value); return event; },
+        autosave() { document.querySelectorAll('.event-block').forEach(block => this.syncEventFromDOM(block)); if (!state.isDirty) return; API.saveState({ entities: state.entities, locations: state.locations, events: state.events }).then(res => { state.isDirty = false; UI.sessionName.textContent = res.name; View.setAutosaveIndicator(`Saved ${new Date().toLocaleTimeString()}`); }).catch(() => View.setAutosaveIndicator('Save failed', true)); },
+        async generatePrompt() { await this.autosave(); const payload = { prompt_id: UI.promptSelect.value, scenario: { entities: state.entities, locations: state.locations, events: state.events }}; const res = await API.generatePrompt(payload); UI.promptOutput.value = res.prompt; UI.resultsContainer.style.display = 'block'; },
+        handleNewScenario() { View.renderModal({ title: "Start New Scenario?", content: "<p>Your current work is in autosave. Any unsaved named versions will be kept.</p>", actions: [{ text: "Cancel", class: "btn-secondary", action: "close-modal" }, { text: "Discard & Start New", class: "btn-danger-outline", action: "confirm-discard" }] }); },
+        handleSave() { View.renderModal({ title: "Save Scenario", content: `<div class="form-group"><label for="scenario-name-input">Scenario Name</label><input type="text" id="scenario-name-input" placeholder="e.g., Q3 Incident Report"></div>`, actions: [{ text: "Cancel", class: "btn-secondary", action: "close-modal" }, { text: "Save Snapshot", class: "btn-primary", action: "confirm-save" }] }); },
+        async confirmSave() { const name = document.getElementById('scenario-name-input').value; if (!name) { alert("Please enter a name."); return; } await this.autosave(); await API.saveScenario({ name, content: { entities: state.entities, locations: state.locations, events: state.events } }); View.closeModal(); },
+        async handleShowSaved() { const scenarios = await API.getScenarios(); const scenariosHTML = scenarios.map(s => `<div class="modal-item"><div><a href="/load/${s.id}">${s.name}</a><p class="text-secondary">${s.last_updated}</p></div><button class="btn btn-danger" data-action="delete-saved" data-id="${s.id}">×</button></div>`).join(''); View.renderModal({ title: "Saved Scenarios", content: `<div class="modal-list">${scenariosHTML || "<p>No saved scenarios.</p>"}</div>`, actions: [{ text: "Close", class: "btn-secondary", action: "close-modal" }] }); },
+        async deleteSaved(id) { if (!confirm("Delete this saved scenario forever?")) return; await API.deleteScenario(id); this.handleShowSaved(); },
+        generateId: () => '_' + Math.random().toString(36).substr(2, 9),
+    };
 
-@app.route('/api/save', methods=['POST'])
-def handle_save():
-    data = request.json
-    name, content = data.get('name'), data.get('content')
-    if not name or not content: return jsonify({'status': 'error', 'message': 'Missing name or content'}), 400
-    new_scenario = Scenario(name=name, content_json=json.dumps(content), is_autosave=False)
-    db.session.add(new_scenario)
-    db.session.commit()
-    return jsonify({'status': 'success', 'id': new_scenario.id})
+    // --- 5. API ---
+    const API = {
+        async _fetch(url, options = {}) {
+            options.headers = { 'Content-Type': 'application/json', ...options.headers };
+            const response = await fetch(url, options);
+            if (!response.ok) { const err = await response.json().catch(() => ({error: `HTTP error! status: ${response.status}`})); throw new Error(err.error); }
+            if (response.status === 204) return null;
+            return response.json();
+        },
+        getPrompts: () => API._fetch('/api/prompts'),
+        addPrompt: (data) => API._fetch('/api/prompts', { method: 'POST', body: JSON.stringify(data) }),
+        deletePrompt: (id) => API._fetch(`/api/prompts/${id}`, { method: 'DELETE' }),
+        saveState: (data) => API._fetch('/api/state', { method: 'POST', body: JSON.stringify(data) }),
+        generatePrompt: (data) => API._fetch('/api/generate-prompt', { method: 'POST', body: JSON.stringify(data) }),
+        getScenarios: () => API._fetch('/api/scenarios'),
+        saveScenario: (data) => API._fetch('/api/scenarios', { method: 'POST', body: JSON.stringify(data) }),
+        deleteScenario: (id) => API._fetch(`/api/scenarios/${id}`, { method: 'DELETE' }),
+        clearAutosave: () => API._fetch('/api/scenarios/new', { method: 'POST' }),
+    };
 
-@app.route('/api/saved-scenarios')
-def get_saved_scenarios():
-    scenarios = Scenario.query.filter_by(is_autosave=False).order_by(Scenario.last_updated.desc()).all()
-    return jsonify([{'id': s.id, 'name': s.name, 'last_updated': s.last_updated.strftime('%b %d, %Y %H:%M UTC')} for s in scenarios])
+    return { init: Controller.init.bind(Controller) };
+})();
 
-@app.route('/api/delete/<int:scenario_id>', methods=['POST'])
-def delete_scenario(scenario_id):
-    scenario = db.get_or_404(Scenario, scenario_id)
-    if scenario.is_autosave: return jsonify({'status': 'error', 'message': 'Cannot delete autosave session'}), 403
-    db.session.delete(scenario)
-    db.session.commit()
-    return jsonify({'status': 'success'})
-
-@app.route('/api/new-scenario', methods=['POST'])
-def new_scenario():
-    session = Scenario.query.filter_by(is_autosave=True).first()
-    if session:
-        db.session.delete(session)
-        db.session.commit()
-    return jsonify({'status': 'success', 'message': 'New session ready.'})
-
-@app.route('/api/prompts', methods=['GET'])
-def get_prompts():
-    prompts = PromptStyle.query.order_by(PromptStyle.is_deletable, PromptStyle.name).all()
-    return jsonify([{
-        'id': p.id, 
-        'name': p.name, 
-        'instruction': p.instruction, 
-        'is_deletable': p.is_deletable
-    } for p in prompts])
-
-@app.route('/api/prompts/add', methods=['POST'])
-def add_prompt():
-    data = request.json
-    name, instruction = data.get('name'), data.get('instruction')
-    if not name or not instruction:
-        return jsonify({'status': 'error', 'message': 'Name and instruction are required.'}), 400
-    
-    new_prompt = PromptStyle(name=name, instruction=instruction, is_deletable=True)
-    db.session.add(new_prompt)
-    db.session.commit()
-    return jsonify({'status': 'success', 'prompt': {'id': new_prompt.id, 'name': new_prompt.name, 'instruction': new_prompt.instruction, 'is_deletable': True}}), 201
-
-@app.route('/api/prompts/delete/<int:prompt_id>', methods=['POST'])
-def delete_prompt(prompt_id):
-    prompt = db.get_or_404(PromptStyle, prompt_id)
-    if not prompt.is_deletable:
-        return jsonify({'status': 'error', 'message': 'Cannot delete a default prompt.'}), 403
-    
-    db.session.delete(prompt)
-    db.session.commit()
-    return jsonify({'status': 'success'})
-
-# --- Main Execution ---
-if __name__ == '__main__':
-    if not os.path.exists(os.path.join(basedir, 'instance')):
-        os.makedirs(os.path.join(basedir, 'instance'))
-    with app.app_context():
-        db.create_all()
-        seed_default_prompts()
-    app.run(debug=True)
+document.addEventListener('DOMContentLoaded', ReportEngine.init);
