@@ -1,4 +1,3 @@
-<!-- templates/index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -6,149 +5,101 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Report Engine</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@700&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
     <header class="main-header">
         <div class="logo-area">
             <div class="logo">Report Engine</div>
-            <div id="current-scenario-name" class="session-name">{{ session_name or 'New Scenario' }}</div>
+            <div id="session-name" class="session-name">{{ session_name }}</div>
         </div>
         <div class="header-controls">
             <span id="autosave-indicator"></span>
-            <button id="manage-prompts-btn" class="btn btn-secondary">Prompts</button>
-            <button id="new-scenario-btn" class="btn btn-secondary">New Scenario</button>
-            <button id="import-btn" class="btn btn-secondary">Import JSON</button>
-            <button id="export-btn" class="btn btn-secondary">Export JSON</button>
-            <button id="saved-btn" class="btn btn-secondary">Saved</button>
-            <button id="save-btn" class="btn btn-primary">Save</button>
+            <button class="btn btn-secondary" data-action="manage-prompts">Prompts</button>
+            <button class="btn btn-secondary" data-action="new-scenario">New</button>
+            <button class="btn btn-secondary" data-action="import-json">Import</button>
+            <button class="btn btn-secondary" data-action="export-json">Export</button>
+            <button class="btn btn-secondary" data-action="show-saved">Saved</button>
+            <button class="btn btn-primary" data-action="save">Save</button>
         </div>
     </header>
 
-    <div id="main-content">
-        <div class="main-container">
-            <div class="events-column">
-                <div id="event-blocks-container"></div>
-                <!-- *** MODIFIED BLOCK: Added a container and the new Sort button *** -->
-                <div class="event-actions-container">
-                    <button type="button" id="sort-events-btn" class="btn btn-secondary">
-                        <i class="fas fa-sort-amount-down"></i> Sort by Date
-                    </button>
-                    <button type="button" id="add-event-btn" class="btn btn-secondary">
-                        + Add Event Block
-                    </button>
-                </div>
-                <!-- *** END OF MODIFIED BLOCK *** -->
+    <div class="main-container">
+        <div class="events-column">
+            <div class="filter-container panel">
+                <input type="search" id="filter-input" placeholder="Filter events by any detail...">
+                <button id="clear-filter-btn" class="clear-btn" style="display: none;">×</button>
             </div>
-            <div class="sidebar-column">
-                <div class="entity-manager panel">
-                    <h2>Entities</h2>
-                    <div id="entity-list"></div>
-                    <div class="add-item-form">
-                        <input type="text" id="new-entity-name" placeholder="Entity Name">
-                        <select id="new-entity-type"><option value="Person">Person</option><option value="Organization">Organization</option></select>
-                        <button type="button" id="add-entity-btn" class="btn btn-secondary full-width">+ Add Entity</button>
-                    </div>
-                </div>
-                <div class="location-manager panel">
-                    <h2>Locations</h2>
-                    <div id="location-list"></div>
-                    <div class="add-item-form">
-                        <input type="text" id="new-location-name" placeholder="Location Name">
-                        <button type="button" id="add-location-btn" class="btn btn-secondary full-width">+ Add Location</button>
-                    </div>
-                </div>
-                <div class="controls-panel panel">
-                    <h2>Generate Prompt</h2>
-                    <div class="form-group">
-                        <label for="style-select">Prompt Style:</label>
-                        <select id="style-select">
-                            <option>Loading prompts...</option>
-                        </select>
-                    </div>
-                    <button type="button" id="generate-btn" class="btn btn-primary full-width">Generate Master Prompt</button>
-                </div>
+            <div id="events-container"></div>
+            <div class="event-actions">
+                <button class="btn btn-secondary" data-action="add-event"><i class="fa fa-plus"></i> Add Event</button>
+                <button class="btn btn-secondary" data-action="sort-events">
+                    <i id="sort-icon" class="fa fa-sort-amount-down"></i> Sort by Date
+                </button>
             </div>
         </div>
-        <div class="results-container">
-            <h2>Your Generated Master Prompt</h2>
-            <textarea id="prompt-output" readonly></textarea>
-            <button type="button" id="copy-btn" class="btn btn-secondary">Copy to Clipboard</button>
-        </div>
-    </div>
-
-    <!-- MODALS -->
-    <div id="save-modal" class="modal-overlay">
-        <div class="modal-content">
-            <h2>Save Scenario</h2>
-            <p>Enter a name for this scenario snapshot.</p>
-            <input type="text" id="scenario-name-input" placeholder="e.g., Q3 Incident Report">
-            <div class="modal-actions">
-                <button type="button" id="cancel-save-btn" class="btn btn-secondary">Cancel</button>
-                <button type="button" id="confirm-save-btn" class="btn btn-primary">Save Snapshot</button>
-            </div>
-        </div>
-    </div>
-    <div id="saved-modal" class="modal-overlay">
-        <div class="modal-content">
-            <h2>Saved Scenarios</h2>
-            <div id="saved-scenarios-list"></div>
-            <div class="modal-actions"><button type="button" id="close-saved-btn" class="btn btn-secondary">Close</button></div>
-        </div>
-    </div>
-    <div id="new-scenario-modal" class="modal-overlay">
-        <div class="modal-content">
-            <h2>Start a New Scenario?</h2>
-            <p>Your current work is auto-saved. How would you like to proceed?</p>
-            <div class="modal-actions">
-                <button type="button" id="cancel-new-scenario-btn" class="btn btn-secondary">Cancel</button>
-                <button type="button" id="confirm-discard-and-new-btn" class="btn btn-danger-outline">Discard & Start New</button>
-                <button type="button" id="confirm-save-and-new-btn" class="btn btn-primary">Save & Start New</button>
-            </div>
-        </div>
-    </div>
-    <div id="prompts-modal" class="modal-overlay">
-        <div class="modal-content">
-            <h2>Manage Prompts</h2>
-            <div id="prompt-list"></div>
-            <div class="add-prompt-container">
-                <h3>Add New Prompt</h3>
-                <form id="add-prompt-form">
-                    <input type="text" id="new-prompt-name" placeholder="Prompt Name (e.g., 'Poetic Summary')" required>
-                    <textarea id="new-prompt-instruction" placeholder="Enter the detailed instruction for the AI..." rows="4" required></textarea>
-                    <button type="submit" class="btn btn-primary full-width">+ Add Custom Prompt</button>
+        
+        <div class="sidebar-column">
+            <div class="panel">
+                <h2>Entities</h2>
+                <div id="entity-list" class="item-list"></div>
+                <form id="add-entity-form" class="add-item-form">
+                    <input type="text" name="name" placeholder="Entity Name" required>
+                    <select name="type"><option value="Person">Person</option><option value="Organization">Organization</option></select>
+                    <button type="submit" class="btn btn-secondary full-width">+ Add Entity</button>
                 </form>
             </div>
-            <div class="modal-actions">
-                <button type="button" id="close-prompts-btn" class="btn btn-secondary">Close</button>
+            <div class="panel">
+                <h2>Locations</h2>
+                <div id="location-list" class="item-list"></div>
+                <form id="add-location-form" class="add-item-form">
+                    <input type="text" name="name" placeholder="Location Name" required>
+                    <button type="submit" class="btn btn-secondary full-width">+ Add Location</button>
+                </form>
+            </div>
+            <div class="panel">
+                <h2>Generate Prompt</h2>
+                <div class="form-group">
+                    <label for="prompt-select">Prompt Style:</label>
+                    <select id="prompt-select"></select>
+                </div>
+                <button class="btn btn-primary full-width" data-action="generate-prompt">Generate Master Prompt</button>
             </div>
         </div>
     </div>
+    
+    <div id="results-container" class="results-container" style="display:none;">
+        <h2>Generated Master Prompt</h2>
+        <textarea id="prompt-output" readonly></textarea>
+        <button class="btn btn-secondary" data-action="copy-prompt">Copy to Clipboard</button>
+    </div>
 
-    <!-- TEMPLATES -->
+    <div id="modal-container"></div>
+    
+    <input type="file" id="import-file-input" style="display: none;" accept=".json">
+    
     <template id="event-block-template">
         <div class="event-block">
-            <button type="button" class="btn btn-danger delete-block-btn">×</button>
+            <button class="btn btn-danger delete-block-btn" data-action="delete-event">×</button>
             <h3>Event</h3>
             <div class="form-grid">
                 <div class="form-group full-width who-selector-group">
                     <label>Who was involved?</label>
                     <div class="selected-pills"></div>
-                    <input type="text" class="who-search-input" placeholder="Search to filter list below...">
                     <select class="who" multiple></select>
                 </div>
-                <div class="form-group"><label>What happened?</label><input type="text" class="what" placeholder="A significant action..."></div>
-                <div class="form-group"><label>Where?</label><select class="where"></select></div>
-                <div class="form-group"><label>When?</label><input type="date" class="when"></div>
-                <div class="form-group full-width"><label>Why? (Motivation/Cause)</label><input type="text" class="why" placeholder="The reason..."></div>
+                <div class="form-group"><label>What happened?</label><input type="text" class="what" name="what" placeholder="A significant action..."></div>
+                <div class="form-group"><label>Where?</label><select class="where" name="where"></select></div>
+                <div class="form-group"><label>When?</label><input type="date" class="when" name="when"></div>
+                <div class="form-group full-width"><label>Why? (Motivation/Cause)</label><input type="text" class="why" name="why" placeholder="The reason..."></div>
             </div>
         </div>
     </template>
-    
-    <input type="file" id="import-file-input" style="display: none;" accept=".json">
-    
-    <script> const loaded_data_string = {{ loaded_data|tojson }}; </script>
+
+    <script>
+        window.APP_INITIAL_STATE = {{ loaded_data|tojson }};
+    </script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>
