@@ -1,580 +1,296 @@
-// static/js/app.js
-document.addEventListener('DOMContentLoaded', () => {
-    // --- STATE MANAGEMENT ---
-    let state = { entities: [], locations: [], events: [] };
-    let autosaveTimeout;
-    let startNewAfterSave = false;
-    // *** 1. ADDED: State variable to track sort direction. 'desc' means the first click will sort descending. ***
-    let currentSortDirection = 'desc';
+/**
+ * Report Engine Frontend Application
+ * Uses the Module Pattern for robust, private state management.
+ */
+const ReportEngine = (function() {
 
-    // --- DOM ELEMENT CACHE ---
-    const dom = {
-        entityList: document.getElementById('entity-list'),
-        newEntityName: document.getElementById('new-entity-name'),
-        newEntityType: document.getElementById('new-entity-type'),
-        addEntityBtn: document.getElementById('add-entity-btn'),
-        locationList: document.getElementById('location-list'),
-        newLocationName: document.getElementById('new-location-name'),
-        addLocationBtn: document.getElementById('add-location-btn'),
-        eventBlocksContainer: document.getElementById('event-blocks-container'),
-        addEventBtn: document.getElementById('add-event-btn'),
-        eventBlockTemplate: document.getElementById('event-block-template'),
-        currentScenarioName: document.getElementById('current-scenario-name'),
-        autosaveIndicator: document.getElementById('autosave-indicator'),
-        generateBtn: document.getElementById('generate-btn'),
-        styleSelect: document.getElementById('style-select'),
-        resultsContainer: document.querySelector('.results-container'),
-        promptOutput: document.getElementById('prompt-output'),
-        copyBtn: document.getElementById('copy-btn'),
-        saveBtn: document.getElementById('save-btn'),
-        saveModal: document.getElementById('save-modal'),
-        cancelSaveBtn: document.getElementById('cancel-save-btn'),
-        confirmSaveBtn: document.getElementById('confirm-save-btn'),
-        scenarioNameInput: document.getElementById('scenario-name-input'),
-        savedBtn: document.getElementById('saved-btn'),
-        savedModal: document.getElementById('saved-modal'),
-        closeSavedBtn: document.getElementById('close-saved-btn'),
-        savedScenariosList: document.getElementById('saved-scenarios-list'),
-        importBtn: document.getElementById('import-btn'),
-        exportBtn: document.getElementById('export-btn'),
-        importFileInput: document.getElementById('import-file-input'),
-        newScenarioBtn: document.getElementById('new-scenario-btn'),
-        newScenarioModal: document.getElementById('new-scenario-modal'),
-        cancelNewScenarioBtn: document.getElementById('cancel-new-scenario-btn'),
-        confirmDiscardAndNewBtn: document.getElementById('confirm-discard-and-new-btn'),
-        confirmSaveAndNewBtn: document.getElementById('confirm-save-and-new-btn'),
-        managePromptsBtn: document.getElementById('manage-prompts-btn'),
-        promptsModal: document.getElementById('prompts-modal'),
-        closePromptsBtn: document.getElementById('close-prompts-btn'),
-        promptList: document.getElementById('prompt-list'),
-        addPromptForm: document.getElementById('add-prompt-form'),
-        newPromptName: document.getElementById('new-prompt-name'),
-        newPromptInstruction: document.getElementById('new-prompt-instruction'),
-        sortEventsBtn: document.getElementById('sort-events-btn'),
+    // --- 1. STATE ---
+    const state = {
+        entities: [], locations: [], events: [], prompts: [],
+        filterTerm: '', isDirty: false, sortDirection: 'asc'
     };
 
-    // --- PROMPT MANAGEMENT FUNCTIONS ---
-    const populateGenerateDropdown = async () => {
-        try {
-            const response = await fetch('/api/prompts');
-            const prompts = await response.json();
-            dom.styleSelect.innerHTML = prompts.map(p => 
-                `<option value="${p.id}">${p.name}</option>`
-            ).join('');
-        } catch (error) {
-            console.error('Failed to load prompts for dropdown:', error);
-            dom.styleSelect.innerHTML = `<option>Error loading prompts</option>`;
-        }
-    };
+    // --- 2. DOM SELECTORS ---
+    const UI = {};
 
-    const renderPromptsList = (prompts) => {
-        dom.promptList.innerHTML = prompts.map(p => `
-            <div class="prompt-item" data-id="${p.id}">
-                ${p.is_deletable 
-                    ? `<div class="prompt-lock-icon"></div>` 
-                    : `<div class="prompt-lock-icon"><i class="fas fa-lock"></i></div>`
-                }
-                <div class="prompt-info">
-                    <strong>${p.name}</strong>
-                    <p>${p.instruction}</p>
-                </div>
-                ${p.is_deletable 
-                    ? `<button type="button" class="btn delete-prompt-btn">×</button>` 
-                    : ``
-                }
-            </div>
-        `).join('');
-    };
-
-    const handleOpenPromptsModal = async () => {
-        dom.promptList.innerHTML = '<p>Loading...</p>';
-        dom.promptsModal.style.display = 'flex';
-        try {
-            const response = await fetch('/api/prompts');
-            const prompts = await response.json();
-            renderPromptsList(prompts);
-        } catch (error) {
-            dom.promptList.innerHTML = '<p>Could not load prompts.</p>';
-            console.error(error);
-        }
-    };
-
-    const handleAddPrompt = async (e) => {
-        e.preventDefault();
-        const name = dom.newPromptName.value.trim();
-        const instruction = dom.newPromptInstruction.value.trim();
-        if (!name || !instruction) return;
-        
-        try {
-            const response = await fetch('/api/prompts/add', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, instruction }),
+    // --- 3. VIEW ---
+    const View = {
+        init() {
+            UI.sessionName = document.getElementById('session-name');
+            UI.autosaveIndicator = document.getElementById('autosave-indicator');
+            UI.eventsContainer = document.getElementById('events-container');
+            UI.entityList = document.getElementById('entity-list');
+            UI.locationList = document.getElementById('location-list');
+            UI.promptSelect = document.getElementById('prompt-select');
+            UI.filterInput = document.getElementById('filter-input');
+            UI.clearFilterBtn = document.getElementById('clear-filter-btn');
+            UI.resultsContainer = document.getElementById('results-container');
+            UI.promptOutput = document.getElementById('prompt-output');
+            UI.modalContainer = document.getElementById('modal-container');
+            UI.eventTemplate = document.getElementById('event-block-template');
+            UI.addEntityForm = document.getElementById('add-entity-form');
+            UI.addLocationForm = document.getElementById('add-location-form');
+            UI.importFileInput = document.getElementById('import-file-input');
+            UI.sortIcon = document.getElementById('sort-icon');
+        },
+        renderAll() { this.renderEntities(); this.renderLocations(); this.renderEvents(); },
+        renderEvents() {
+            UI.eventsContainer.innerHTML = '';
+            const lowerFilter = state.filterTerm.toLowerCase();
+            const filteredEvents = state.events.filter(event => {
+                if (!lowerFilter) return true;
+                const entityMap = new Map(state.entities.map(e => [e.id, e.name]));
+                const locationMap = new Map(state.locations.map(l => [l.id, l.name]));
+                const who = event.who.map(id => entityMap.get(id) || '').join(' ').toLowerCase();
+                const where = locationMap.get(event.where)?.toLowerCase() || '';
+                return event.what.toLowerCase().includes(lowerFilter) ||
+                       event.why.toLowerCase().includes(lowerFilter) ||
+                       who.includes(lowerFilter) ||
+                       where.includes(lowerFilter);
             });
-            if (response.ok) {
-                dom.addPromptForm.reset();
-                await handleOpenPromptsModal();
-                await populateGenerateDropdown();
+            if (filteredEvents.length > 0) {
+                filteredEvents.forEach(event => UI.eventsContainer.appendChild(this.createEventElement(event)));
             } else {
-                const err = await response.json();
-                alert(`Error: ${err.message}`);
+                UI.eventsContainer.innerHTML = `<p style="text-align:center; color: var(--text-secondary);">No events to display.</p>`;
             }
-        } catch (error) {
-            console.error('Failed to add prompt:', error);
-        }
-    };
-
-    const handleDeletePrompt = async (e) => {
-        if (!e.target.classList.contains('delete-prompt-btn')) return;
-        const promptItem = e.target.closest('.prompt-item');
-        const promptId = promptItem.dataset.id;
-        if (confirm('Are you sure you want to delete this custom prompt?')) {
-            try {
-                const response = await fetch(`/api/prompts/delete/${promptId}`, { method: 'POST' });
-                if (response.ok) {
-                    promptItem.remove();
-                    await populateGenerateDropdown();
-                } else {
-                    const err = await response.json();
-                    alert(`Error: ${err.message}`);
-                }
-            } catch (error) {
-                console.error('Failed to delete prompt:', error);
-            }
-        }
-    };
-
-    // --- RENDER FUNCTIONS ---
-    const renderEntities = () => {
-        dom.entityList.innerHTML = state.entities.map((entity, i) => `
-            <div class="item" data-index="${i}">
-                <span><strong>${entity.name}</strong> (${entity.type})</span>
-                <button type="button" class="btn btn-danger delete-entity-btn">×</button>
-            </div>`).join('');
-        updateAllWhoSelectors();
-    };
-
-    const renderLocations = () => {
-        dom.locationList.innerHTML = state.locations.map((loc, i) => `
-            <div class="item" data-index="${i}">
-                <span>${loc.name}</span>
-                <button type="button" class="btn btn-danger delete-location-btn">×</button>
-            </div>`).join('');
-        updateAllWhereDropdowns();
-    };
-    
-    const renderEvents = () => {
-        dom.eventBlocksContainer.innerHTML = '';
-        if (state.events.length === 0) addEventBlock();
-        else state.events.forEach(() => addEventBlock(false));
-    };
-
-    // --- ENHANCED "WHO" SELECTOR LOGIC ---
-    const updatePillsForSelect = (selectElement) => {
-        const group = selectElement.closest('.who-selector-group');
-        const pillsContainer = group.querySelector('.selected-pills');
-        const selectedOptions = Array.from(selectElement.selectedOptions);
-        
-        pillsContainer.innerHTML = selectedOptions.map(opt => `
-            <div class="pill" data-value="${opt.value}">
-                ${opt.textContent}
-                <span class="remove-pill">×</span>
-            </div>
-        `).join('');
-    };
-
-    const setupWhoSelectorEvents = (group) => {
-        const searchInput = group.querySelector('.who-search-input');
-        const selectElement = group.querySelector('.who');
-        const pillsContainer = group.querySelector('.selected-pills');
-
-        searchInput.addEventListener('input', () => {
-            const searchTerm = searchInput.value.toLowerCase();
-            Array.from(selectElement.options).forEach(opt => {
-                const isMatch = opt.textContent.toLowerCase().includes(searchTerm);
-                opt.style.display = isMatch ? '' : 'none';
+        },
+        createEventElement(event) {
+            const clone = UI.eventTemplate.content.cloneNode(true);
+            const block = clone.querySelector('.event-block');
+            block.dataset.id = event.id;
+            block.querySelector('[name="what"]').value = event.what;
+            block.querySelector('[name="when"]').value = event.when;
+            block.querySelector('[name="why"]').value = event.why;
+            const whereSelect = block.querySelector('[name="where"]');
+            whereSelect.innerHTML = '<option value="">Select...</option>';
+            state.locations.forEach(loc => {
+                const option = new Option(loc.name, loc.id);
+                option.selected = loc.id === event.where;
+                whereSelect.appendChild(option);
             });
-        });
-
-        selectElement.addEventListener('change', () => {
-            updatePillsForSelect(selectElement);
-            triggerAutosave();
-        });
-
-        pillsContainer.addEventListener('click', e => {
-            if (e.target.classList.contains('remove-pill')) {
-                const valueToRemove = e.target.parentElement.dataset.value;
-                const optionToDeselect = selectElement.querySelector(`option[value="${valueToRemove}"]`);
-                if (optionToDeselect) {
-                    optionToDeselect.selected = false;
-                }
-                selectElement.dispatchEvent(new Event('change'));
-            }
-        });
-    };
-    
-    const updateAllWhoSelectors = () => {
-        document.querySelectorAll('.who-selector-group').forEach(group => {
-            const selectElement = group.querySelector('.who');
-            const selectedValues = Array.from(selectElement.selectedOptions).map(opt => opt.value);
-            
-            selectElement.innerHTML = state.entities.map(e => 
-                `<option value="${e.name}">${e.name} (${e.type})</option>`
-            ).join('');
-
-            Array.from(selectElement.options).forEach(opt => {
-                opt.selected = selectedValues.includes(opt.value);
-            });
-            updatePillsForSelect(selectElement);
-        });
-    };
-    
-    const updateAllWhereDropdowns = () => {
-        const whereSelects = document.querySelectorAll('.where');
-        const locationOptions = '<option value="">N/A</option>' + state.locations.map(l => `<option value="${l.name}">${l.name}</option>`).join('');
-        whereSelects.forEach(select => {
-            const selected = select.value;
-            select.innerHTML = locationOptions;
-            select.value = selected;
-        });
-    };
-
-    // --- DATA GATHERING ---
-    const gatherStateFromDOM = () => {
-        const eventBlocks = dom.eventBlocksContainer.querySelectorAll('.event-block');
-        state.events = Array.from(eventBlocks).map(block => ({
-            who: Array.from(block.querySelector('.who').selectedOptions).map(opt => opt.value),
-            what: block.querySelector('.what').value.trim(),
-            where: block.querySelector('.where').value,
-            when: block.querySelector('.when').value,
-            why: block.querySelector('.why').value.trim()
-        }));
-        return state;
-    };
-
-    // --- CORE ACTIONS ---
-    const addEntity = () => {
-        const name = dom.newEntityName.value.trim();
-        if (name && !state.entities.find(e => e.name === name)) {
-            state.entities.push({ name, type: dom.newEntityType.value });
-            dom.newEntityName.value = '';
-            renderEntities();
-            triggerAutosave();
-        }
-    };
-    
-    const addLocation = () => {
-        const name = dom.newLocationName.value.trim();
-        if (name && !state.locations.find(l => l.name === name)) {
-            state.locations.push({ name });
-            dom.newLocationName.value = '';
-            renderLocations();
-            triggerAutosave();
-        }
-    };
-
-    const addEventBlock = (triggerSave = true) => {
-        const content = dom.eventBlockTemplate.content.cloneNode(true);
-        const newBlock = content.querySelector('.event-block');
-        dom.eventBlocksContainer.appendChild(newBlock);
-        
-        const whoGroup = newBlock.querySelector('.who-selector-group');
-        setupWhoSelectorEvents(whoGroup);
-        
-        updateAllWhoSelectors();
-        updateAllWhereDropdowns();
-
-        if (triggerSave) triggerAutosave();
-    };
-    
-    const deleteItem = (e, listName, renderFunc) => {
-        const item = e.target.closest('.item');
-        if (item) {
-            state[listName].splice(item.dataset.index, 1);
-            renderFunc();
-            triggerAutosave();
-        }
-    };
-    
-    // *** 2. MODIFIED: The entire sort function is replaced with the toggling version ***
-    const sortEventsByDate = () => {
-        const eventBlocks = Array.from(dom.eventBlocksContainer.children);
-        const icon = dom.sortEventsBtn.querySelector('i');
-
-        // Capture the direction for this sort operation
-        const sortDirectionThisClick = currentSortDirection;
-
-        eventBlocks.sort((blockA, blockB) => {
-            const dateA = blockA.querySelector('.when').value;
-            const dateB = blockB.querySelector('.when').value;
-
-            // Events without a date are always pushed to the end
-            if (!dateA) return 1;
-            if (!dateB) return -1;
-
-            // Sort based on the captured direction
-            if (sortDirectionThisClick === 'asc') {
-                return new Date(dateA) - new Date(dateB); // Oldest to Newest
-            } else {
-                return new Date(dateB) - new Date(dateA); // Newest to Oldest
-            }
-        });
-
-        // Re-append sorted elements to the DOM
-        eventBlocks.forEach(block => dom.eventBlocksContainer.appendChild(block));
-
-        // Update UI to reflect the sort that just happened
-        // Note: The icons are 'down' for descending (newest first, like a pile)
-        // and 'up' for ascending (oldest first, building up). Font Awesome's logic.
-        if (sortDirectionThisClick === 'desc') {
-            dom.sortEventsBtn.title = "Sorted: Newest to Oldest. Click to sort ascending.";
-            icon.classList.remove('fa-sort-amount-down');
-            icon.classList.add('fa-sort-amount-up');
-        } else { // 'asc'
-            dom.sortEventsBtn.title = "Sorted: Oldest to Newest. Click to sort descending.";
-            icon.classList.remove('fa-sort-amount-up');
-            icon.classList.add('fa-sort-amount-down');
-        }
-
-        // Flip the direction for the *next* click
-        currentSortDirection = (sortDirectionThisClick === 'asc') ? 'desc' : 'asc';
-
-        triggerAutosave();
-    };
-
-    // --- API & MODAL HANDLERS ---
-    const triggerAutosave = () => {
-        dom.autosaveIndicator.textContent = 'Saving...';
-        dom.autosaveIndicator.style.opacity = '1';
-        clearTimeout(autosaveTimeout);
-        autosaveTimeout = setTimeout(async () => {
-            const currentData = gatherStateFromDOM();
-            try {
-                const response = await fetch('/api/autosave', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(currentData) });
-                await response.json();
-                dom.autosaveIndicator.textContent = `Saved!`;
-            } catch (error) {
-                console.error('Autosave failed:', error);
-                dom.autosaveIndicator.textContent = 'Save Failed';
-            }
-            setTimeout(() => dom.autosaveIndicator.style.opacity = '0', 2000);
-        }, 1000);
-    };
-
-    const handleSave = async () => {
-        const name = dom.scenarioNameInput.value.trim();
-        if (!name) { alert('Please enter a name for the scenario.'); return; }
-        const content = gatherStateFromDOM();
-        try {
-            const response = await fetch('/api/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, content }) });
-            const result = await response.json();
-            if (result.status === 'success') {
-                dom.saveModal.style.display = 'none';
-                dom.scenarioNameInput.value = '';
-                if (startNewAfterSave) { startNewAfterSave = false; await handleDiscardAndNew(); } 
-                else { alert('Scenario saved successfully!'); }
-            } else { alert(`Error: ${result.message}`); }
-        } catch (error) { console.error('Save failed:', error); alert('An error occurred while saving.'); }
-    };
-
-    const handleDiscardAndNew = async () => {
-        try {
-            const response = await fetch('/api/new-scenario', { method: 'POST' });
-            if (!response.ok) throw new Error('Server-side reset failed.');
-            window.location.href = '/';
-        } catch (error) { console.error("Failed to start new scenario:", error); alert("Could not start a new scenario. Please try refreshing the page."); }
-    };
-
-    const handleGeneratePrompt = async () => {
-        const scenario = gatherStateFromDOM();
-        const prompt_id = dom.styleSelect.value;
-        const response = await fetch('/api/generate-prompt', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt_id, scenario })
-        });
-        const data = await response.json();
-        dom.promptOutput.value = data.prompt;
-        dom.resultsContainer.style.display = 'block';
-        dom.promptOutput.style.height = 'auto';
-        dom.promptOutput.style.height = (dom.promptOutput.scrollHeight) + 'px';
-        dom.promptOutput.focus(); dom.promptOutput.select();
-    };
-
-    const handleOpenSavedModal = async () => {
-        dom.savedScenariosList.innerHTML = '<p>Loading...</p>';
-        dom.savedModal.style.display = 'flex';
-        try {
-            const response = await fetch('/api/saved-scenarios');
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            const scenarios = await response.json();
-            renderSavedScenarios(scenarios);
-        } catch (error) { console.error('Failed to fetch saved scenarios:', error); dom.savedScenariosList.innerHTML = '<p style="color: var(--danger-color);">Could not load scenarios.</p>'; }
-    };
-    
-    const renderSavedScenarios = (scenarios) => {
-        if (scenarios.length === 0) { dom.savedScenariosList.innerHTML = '<p>No saved scenarios yet.</p>'; return; }
-        dom.savedScenariosList.innerHTML = scenarios.map(s => `
-            <div class="saved-item" data-id="${s.id}">
-                <div class="saved-item-info">
-                    <a href="/load/${s.id}" class="saved-item-name" title="${s.name}">${s.name}</a>
-                    <span class="saved-item-date">Updated: ${s.last_updated}</span>
-                </div>
-                <button type="button" class="btn delete-saved-btn">Delete</button>
-            </div>`).join('');
-    };
-
-    const handleSavedListActions = async (e) => {
-        if (e.target.classList.contains('delete-saved-btn')) {
-            e.preventDefault();
-            const item = e.target.closest('.saved-item');
-            const scenarioId = item.dataset.id;
-            if (confirm(`Are you sure you want to permanently delete this scenario? This cannot be undone.`)) {
-                try {
-                    const response = await fetch(`/api/delete/${scenarioId}`, { method: 'POST' });
-                    const result = await response.json();
-                    if (response.ok && result.status === 'success') { item.style.transition = 'opacity 0.3s'; item.style.opacity = '0'; setTimeout(() => item.remove(), 300); } 
-                    else { alert(`Error: ${result.message || 'Could not delete scenario.'}`); }
-                } catch (error) { console.error('Delete failed:', error); alert('An error occurred while trying to delete the scenario.'); }
-            }
-        }
-    };
-
-    // --- IMPORT / EXPORT with METADATA ---
-    const exportData = () => {
-        const scenarioData = gatherStateFromDOM();
-        const exportObject = {
-            meta: {
-                exported_at: new Date().toISOString(),
-                app_version: "1.0"
-            },
-            scenario_data: scenarioData
-        };
-        
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const day = String(now.getDate()).padStart(2, '0');
-        const hours = String(now.getHours()).padStart(2, '0');
-        const minutes = String(now.getMinutes()).padStart(2, '0');
-        const seconds = String(now.getSeconds()).padStart(2, '0');
-        const timestamp = `${year}${month}${day}_${hours}${minutes}${seconds}`;
-        const filename = `report-engine_${timestamp}.json`;
-
-        const dataStr = JSON.stringify(exportObject, null, 2);
-        const blob = new Blob([dataStr], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    };
-
-    const importData = (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const importedData = JSON.parse(e.target.result);
-                loadState(importedData);
-            } catch (err) {
-                alert('Error: Invalid JSON file.');
-                console.error(err);
-            }
-        };
-        reader.readAsText(file);
-        event.target.value = null;
-    };
-
-    const loadState = (data) => {
-        const scenarioData = (data.scenario_data && data.meta) ? data.scenario_data : data;
-
-        state = {
-            entities: scenarioData.entities || [],
-            locations: scenarioData.locations || [],
-            events: scenarioData.events || []
-        };
-        renderAll();
-        
-        const eventBlocks = dom.eventBlocksContainer.querySelectorAll('.event-block');
-        eventBlocks.forEach((block, index) => {
-            const eventData = state.events[index];
-            if (!eventData) return;
-
+            this.updateWhoSelector(block, event.who);
+            return block;
+        },
+        updateWhoSelector(block, selectedIds) {
             const whoSelect = block.querySelector('.who');
-            if(whoSelect && eventData.who) {
-                Array.from(whoSelect.options).forEach(opt => {
-                    opt.selected = eventData.who.includes(opt.value);
-                });
-                updatePillsForSelect(whoSelect);
+            whoSelect.innerHTML = '';
+            state.entities.forEach(entity => {
+                const option = new Option(`${entity.name} (${entity.type})`, entity.id);
+                option.selected = selectedIds.includes(entity.id);
+                whoSelect.appendChild(option);
+            });
+            this.renderPills(block, selectedIds);
+        },
+        renderPills(block, selectedIds) {
+            const pillsContainer = block.querySelector('.selected-pills');
+            pillsContainer.innerHTML = '';
+            selectedIds.forEach(id => {
+                const entity = state.entities.find(e => e.id === id);
+                if (entity) {
+                    const pill = document.createElement('span');
+                    pill.className = 'pill';
+                    pill.innerHTML = `${entity.name} <span class="remove-pill" data-action="remove-pill" data-id="${entity.id}">×</span>`;
+                    pillsContainer.appendChild(pill);
+                }
+            });
+        },
+        renderEntities() {
+            UI.entityList.innerHTML = '';
+            state.entities.forEach(entity => {
+                const item = document.createElement('div');
+                item.className = 'item';
+                item.innerHTML = `<span>${entity.name} <small>(${entity.type})</small></span>
+                                  <button class="btn btn-danger" data-action="delete-entity" data-id="${entity.id}">×</button>`;
+                UI.entityList.appendChild(item);
+            });
+        },
+        renderLocations() {
+            UI.locationList.innerHTML = '';
+            state.locations.forEach(loc => {
+                const item = document.createElement('div');
+                item.className = 'item';
+                item.innerHTML = `<span>${loc.name}</span>
+                                 <button class="btn btn-danger" data-action="delete-location" data-id="${loc.id}">×</button>`;
+                UI.locationList.appendChild(item);
+            });
+        },
+        renderPrompts() { UI.promptSelect.innerHTML = ''; state.prompts.forEach(p => UI.promptSelect.add(new Option(p.name, p.id))); },
+        setAutosaveIndicator(text, isError = false) {
+            UI.autosaveIndicator.textContent = text;
+            UI.autosaveIndicator.style.color = isError ? 'var(--danger-color)' : 'var(--text-secondary)';
+            UI.autosaveIndicator.style.opacity = '1';
+            setTimeout(() => UI.autosaveIndicator.style.opacity = '0', 2500);
+        },
+        renderModal({ title, content, actions }) {
+            const actionsHTML = actions.map(a => `<button class="btn ${a.class || 'btn-secondary'}" data-action="${a.action}">${a.text}</button>`).join('');
+            const modalHTML = `
+                <div class="modal-overlay" data-action="close-modal">
+                    <div class="modal-content" data-action="modal-content">
+                        <h2>${title}</h2>
+                        <div class="modal-body">${content}</div>
+                        <div class="modal-actions">${actionsHTML}</div>
+                    </div>
+                </div>`;
+            UI.modalContainer.innerHTML = modalHTML;
+        },
+        renderPromptsModal() {
+            const deletablePrompts = state.prompts.filter(p => p.is_deletable).map(p => `
+                <div class="modal-item">
+                    <div class="icon"><i class="fa fa-user-edit"></i></div>
+                    <div class="modal-item-info"><strong>${p.name}</strong><p>${p.instruction.substring(0, 80)}...</p></div>
+                    <button class="btn btn-danger" data-action="delete-prompt" data-id="${p.id}">×</button>
+                </div>`).join('');
+            const defaultPrompts = state.prompts.filter(p => !p.is_deletable).map(p => `
+                <div class="modal-item">
+                    <div class="icon"><i class="fa fa-lock"></i></div>
+                    <div class="modal-item-info"><strong>${p.name}</strong><p>${p.instruction.substring(0, 80)}...</p></div>
+                </div>`).join('');
+            const content = `<div class="modal-list">${deletablePrompts}${defaultPrompts}</div><div class="modal-add-form"><h3>Add Custom Prompt</h3><form id="add-prompt-form"><div class="form-group"><input name="name" type="text" placeholder="Prompt Name" required></div><div class="form-group"><textarea name="instruction" rows="3" placeholder="AI instruction..." required></textarea></div><button type="submit" class="btn btn-primary full-width">Add Prompt</button></form></div>`;
+            this.renderModal({title: "Manage Prompts", content, actions: [{text: "Close", class: "btn-secondary", action: "close-modal"}] });
+            UI.modalContainer.querySelector('#add-prompt-form').addEventListener('submit', Controller.handleAddPrompt.bind(Controller));
+        },
+        closeModal() { UI.modalContainer.innerHTML = ''; }
+    };
+
+    // --- 4. CONTROLLER ---
+    const Controller = {
+        init() { View.init(); this.bindEvents(); this.loadInitialState(); setInterval(this.autosave.bind(this), 5000); },
+        loadInitialState() {
+            const initialState = window.APP_INITIAL_STATE;
+            if (initialState) {
+                const sanitizedData = this.sanitizeImportedData(initialState);
+                state.entities = sanitizedData.entities; state.locations = sanitizedData.locations; state.events = sanitizedData.events;
             }
-
-            block.querySelector('.what').value = eventData.what || '';
-            block.querySelector('.where').value = eventData.where || '';
-            block.querySelector('.when').value = eventData.when || '';
-            block.querySelector('.why').value = eventData.why || '';
-        });
-        triggerAutosave();
-    };
-    
-    const renderAll = () => {
-        renderEntities();
-        renderLocations();
-        renderEvents();
-    };
-
-    // --- EVENT LISTENERS SETUP ---
-    const setupEventListeners = () => {
-        dom.sortEventsBtn.addEventListener('click', sortEventsByDate);
-        dom.addEntityBtn.addEventListener('click', addEntity);
-        dom.addLocationBtn.addEventListener('click', addLocation);
-        dom.addEventBtn.addEventListener('click', () => addEventBlock());
-        dom.generateBtn.addEventListener('click', handleGeneratePrompt);
-        dom.entityList.addEventListener('click', (e) => e.target.classList.contains('delete-entity-btn') && deleteItem(e, 'entities', renderEntities));
-        dom.locationList.addEventListener('click', (e) => e.target.classList.contains('delete-location-btn') && deleteItem(e, 'locations', renderLocations));
-        dom.eventBlocksContainer.addEventListener('click', e => { if (e.target.classList.contains('delete-block-btn')) { e.target.closest('.event-block').remove(); triggerAutosave(); } });
+            if (state.events.length === 0) this.addEvent();
+            API.getPrompts().then(prompts => { state.prompts = prompts; View.renderPrompts(); });
+            View.renderAll();
+        },
+        bindEvents() {
+            UI.addEntityForm.addEventListener('submit', this.handleAddEntity.bind(this));
+            UI.addLocationForm.addEventListener('submit', this.handleAddLocation.bind(this));
+            UI.importFileInput.addEventListener('change', this.handleFileImport.bind(this));
+            document.body.addEventListener('click', this.handleClick.bind(this));
+            document.body.addEventListener('input', this.handleInput.bind(this));
+            document.body.addEventListener('change', this.handleChange.bind(this));
+        },
+        handleAddEntity(e) { e.preventDefault(); const form = e.target, data = new FormData(form), name = data.get('name'); if (!name) return; state.entities.push({ id: this.generateId(), name, type: data.get('type') }); state.isDirty = true; View.renderAll(); form.reset(); },
+        handleAddLocation(e) { e.preventDefault(); const form = e.target, data = new FormData(form), name = data.get('name'); if (!name) return; state.locations.push({ id: this.generateId(), name }); state.isDirty = true; View.renderAll(); form.reset(); },
+        handleAddPrompt(e) { e.preventDefault(); const form = e.target, data = new FormData(form), name = data.get('name'), instruction = data.get('instruction'); if (!name || !instruction) return; API.addPrompt({ name, instruction }).then(newPrompt => { state.prompts.push(newPrompt); View.renderPromptsModal(); View.renderPrompts(); }); },
+        handleClick(e) {
+            const target = e.target.closest('[data-action]');
+            if (!target) return;
+            const action = target.dataset.action;
+            if (action === "modal-content") { e.stopPropagation(); return; }
+            const id = target.dataset.id;
+            const actions = {
+                'manage-prompts': () => View.renderPromptsModal(), 'new-scenario': () => this.handleNewScenario(),
+                'save': () => this.handleSave(), 'show-saved': () => this.handleShowSaved(),
+                'close-modal': () => View.closeModal(), 'confirm-save': () => this.confirmSave(),
+                'confirm-discard': () => { API.clearAutosave().then(() => location.reload()); }, 'delete-prompt': () => this.deletePrompt(id),
+                'delete-saved': () => this.deleteSaved(id), 'import-json': () => UI.importFileInput.click(),
+                'export-json': () => this.exportJSON(), 'delete-entity': () => this.deleteEntity(id),
+                'delete-location': () => this.deleteLocation(id), 'add-event': () => this.addEvent(),
+                'sort-events': () => this.sortEvents(), 'delete-event': () => this.deleteEvent(target.closest('.event-block').dataset.id),
+                'generate-prompt': () => this.generatePrompt(), 'copy-prompt': () => navigator.clipboard.writeText(UI.promptOutput.value),
+                'remove-pill': () => { const block = target.closest('.event-block'), whoSelect = block.querySelector('.who'), option = whoSelect.querySelector(`option[value="${id}"]`); if (option) option.selected = false; whoSelect.dispatchEvent(new Event('change', { bubbles: true })); }
+            };
+            if (actions[action]) actions[action]();
+        },
+        handleInput(e) { if (e.target.id === 'filter-input') { state.filterTerm = e.target.value; UI.clearFilterBtn.style.display = state.filterTerm ? 'block' : 'none'; View.renderEvents(); } else if (e.target.closest('.event-block') || e.target.id === 'scenario-name-input') { state.isDirty = true; } },
+        handleChange(e) { const block = e.target.closest('.event-block'); if (!block) return; state.isDirty = true; const event = this.syncEventFromDOM(block); if (e.target.matches('.who')) View.renderPills(block, event.who); },
         
-        dom.eventBlocksContainer.addEventListener('change', e => {
-            if (e.target.matches('input:not(.who-search-input), select, textarea')) {
-                triggerAutosave();
-            }
-        });
+        // *** THE DEFINITIVE, INTELLIGENT DATA MIGRATION FIX ***
+        sanitizeImportedData(data) {
+            // First pass: Ensure all entities/locations have string IDs
+            const entities = (data.entities || []).map(e => ({ ...e, id: String(e.id || this.generateId()) }));
+            const locations = (data.locations || []).map(l => ({ ...l, id: String(l.id || this.generateId()) }));
 
-        dom.saveBtn.addEventListener('click', () => dom.saveModal.style.display = 'flex');
-        dom.cancelSaveBtn.addEventListener('click', () => { startNewAfterSave = false; dom.saveModal.style.display = 'none'; });
-        dom.confirmSaveBtn.addEventListener('click', handleSave);
-        dom.savedBtn.addEventListener('click', handleOpenSavedModal);
-        dom.closeSavedBtn.addEventListener('click', () => dom.savedModal.style.display = 'none');
-        dom.savedScenariosList.addEventListener('click', handleSavedListActions);
-        
-        dom.newScenarioBtn.addEventListener('click', () => dom.newScenarioModal.style.display = 'flex');
-        dom.cancelNewScenarioBtn.addEventListener('click', () => dom.newScenarioModal.style.display = 'none');
-        dom.confirmDiscardAndNewBtn.addEventListener('click', handleDiscardAndNew);
-        dom.confirmSaveAndNewBtn.addEventListener('click', () => { startNewAfterSave = true; dom.newScenarioModal.style.display = 'none'; dom.saveModal.style.display = 'flex'; });
-        
-        dom.managePromptsBtn.addEventListener('click', handleOpenPromptsModal);
-        dom.closePromptsBtn.addEventListener('click', () => dom.promptsModal.style.display = 'none');
-        dom.addPromptForm.addEventListener('submit', handleAddPrompt);
-        dom.promptList.addEventListener('click', handleDeletePrompt);
-        
-        dom.copyBtn.addEventListener('click', () => navigator.clipboard.writeText(dom.promptOutput.value));
-        dom.exportBtn.addEventListener('click', exportData);
-        dom.importBtn.addEventListener('click', () => dom.importFileInput.click());
-        dom.importFileInput.addEventListener('change', importData);
+            // Create lookup maps to convert old name-based relations to new ID-based relations
+            const entityNameToId = new Map(entities.map(e => [e.name, e.id]));
+            const locationNameToId = new Map(locations.map(l => [l.name, l.id]));
+
+            const events = (data.events || []).map(ev => {
+                let newWho = [];
+                if (Array.isArray(ev.who) && ev.who.length > 0) {
+                    const firstWho = ev.who[0];
+                    if (typeof firstWho === 'string' && entityNameToId.has(firstWho)) {
+                        // This is the old, NAME-based format. Migrate names to IDs.
+                        newWho = ev.who.map(name => entityNameToId.get(name)).filter(Boolean);
+                    } else {
+                        // This is the ID-based format. Just ensure IDs are strings.
+                        newWho = ev.who.map(id => String(id));
+                    }
+                }
+
+                let newWhere = null;
+                if (ev.where) {
+                    if (typeof ev.where === 'string' && locationNameToId.has(ev.where)) {
+                        newWhere = locationNameToId.get(ev.where); // Name-based format
+                    } else {
+                        newWhere = String(ev.where); // ID-based format
+                    }
+                }
+                
+                return { ...ev, id: String(ev.id || this.generateId()), who: newWho, where: newWhere };
+            });
+
+            return { entities, locations, events };
+        },
+
+        handleFileImport(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const data = JSON.parse(event.target.result);
+                    const sanitizedData = this.sanitizeImportedData(data);
+                    state.entities = sanitizedData.entities; state.locations = sanitizedData.locations; state.events = sanitizedData.events;
+                    state.isDirty = true; View.renderAll();
+                } catch (err) { alert(`Error: Could not import file. ${err.message}`); }
+            };
+            reader.readAsText(file);
+            e.target.value = null;
+        },
+        exportJSON() { this.autosave(); const dataStr = JSON.stringify({ entities: state.entities, locations: state.locations, events: state.events }, null, 2); const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([dataStr], { type: 'application/json' })); link.download = `report-scenario-${Date.now()}.json`; link.click(); URL.revokeObjectURL(link.href); },
+        deletePrompt(id) { if (!confirm("Are you sure?")) return; API.deletePrompt(id).then(() => { state.prompts = state.prompts.filter(p => p.id != id); View.renderPromptsModal(); View.renderPrompts(); }).catch(err => alert(`Error: ${err.message}`)); },
+        deleteEntity(id) { state.entities = state.entities.filter(e => e.id !== id); state.events.forEach(event => event.who = event.who.filter(whoId => whoId !== id)); state.isDirty = true; View.renderAll(); },
+        deleteLocation(id) { state.locations = state.locations.filter(l => l.id !== id); state.events.forEach(event => { if(event.where === id) event.where = null; }); state.isDirty = true; View.renderAll(); },
+        addEvent() { state.events.push({ id: this.generateId(), what: '', when: '', where: null, who: [], why: '' }); state.isDirty = true; View.renderEvents(); },
+        deleteEvent(id) { state.events = state.events.filter(e => e.id !== id); state.isDirty = true; View.renderEvents(); },
+        sortEvents() { const direction = state.sortDirection; state.events.sort((a, b) => { const dateA = new Date(a.when || 0); const dateB = new Date(b.when || 0); return direction === 'asc' ? dateA - dateB : dateB - dateA; }); state.sortDirection = direction === 'asc' ? 'desc' : 'asc'; UI.sortIcon.className = state.sortDirection === 'asc' ? 'fa fa-sort-amount-down' : 'fa fa-sort-amount-up'; state.isDirty = true; View.renderEvents(); },
+        syncEventFromDOM(block) { const event = state.events.find(e => e.id === block.dataset.id); if (!event) return; event.what = block.querySelector('[name="what"]').value; event.when = block.querySelector('[name="when"]').value; event.why = block.querySelector('[name="why"]').value; event.where = block.querySelector('[name="where"]').value; event.who = Array.from(block.querySelector('.who').selectedOptions).map(opt => opt.value); return event; },
+        autosave() { document.querySelectorAll('.event-block').forEach(block => this.syncEventFromDOM(block)); if (!state.isDirty) return; API.saveState({ entities: state.entities, locations: state.locations, events: state.events }).then(res => { state.isDirty = false; UI.sessionName.textContent = res.name; View.setAutosaveIndicator(`Saved ${new Date().toLocaleTimeString()}`); }).catch(() => View.setAutosaveIndicator('Save failed', true)); },
+        async generatePrompt() { await this.autosave(); const payload = { prompt_id: UI.promptSelect.value, scenario: { entities: state.entities, locations: state.locations, events: state.events }}; const res = await API.generatePrompt(payload); UI.promptOutput.value = res.prompt; UI.resultsContainer.style.display = 'block'; },
+        handleNewScenario() { View.renderModal({ title: "Start New Scenario?", content: "<p>Your current work is in autosave. Any unsaved named versions will be kept.</p>", actions: [{ text: "Cancel", class: "btn-secondary", action: "close-modal" }, { text: "Discard & Start New", class: "btn-danger-outline", action: "confirm-discard" }] }); },
+        handleSave() { View.renderModal({ title: "Save Scenario", content: `<div class="form-group"><label for="scenario-name-input">Scenario Name</label><input type="text" id="scenario-name-input" placeholder="e.g., Q3 Incident Report"></div>`, actions: [{ text: "Cancel", class: "btn-secondary", action: "close-modal" }, { text: "Save Snapshot", class: "btn-primary", action: "confirm-save" }] }); },
+        async confirmSave() { const name = document.getElementById('scenario-name-input').value; if (!name) { alert("Please enter a name."); return; } await this.autosave(); await API.saveScenario({ name, content: { entities: state.entities, locations: state.locations, events: state.events } }); View.closeModal(); },
+        async handleShowSaved() { const scenarios = await API.getScenarios(); const scenariosHTML = scenarios.map(s => `<div class="modal-item"><div><a href="/load/${s.id}">${s.name}</a><p class="text-secondary">${s.last_updated}</p></div><button class="btn btn-danger" data-action="delete-saved" data-id="${s.id}">×</button></div>`).join(''); View.renderModal({ title: "Saved Scenarios", content: `<div class="modal-list">${scenariosHTML || "<p>No saved scenarios.</p>"}</div>`, actions: [{ text: "Close", class: "btn-secondary", action: "close-modal" }] }); },
+        async deleteSaved(id) { if (!confirm("Delete this saved scenario forever?")) return; await API.deleteScenario(id); this.handleShowSaved(); },
+        generateId: () => '_' + Math.random().toString(36).substr(2, 9),
     };
 
-    const init = () => {
-        setupEventListeners();
-        populateGenerateDropdown();
-        if (typeof loaded_data_string === 'string' && loaded_data_string.trim() !== '') {
-            try { loadState(JSON.parse(loaded_data_string)); } 
-            catch (e) { console.error("Failed to parse initial data, starting fresh.", e); addEventBlock(); }
-        } else { addEventBlock(); }
+    // --- 5. API ---
+    const API = {
+        async _fetch(url, options = {}) {
+            options.headers = { 'Content-Type': 'application/json', ...options.headers };
+            const response = await fetch(url, options);
+            if (!response.ok) { const err = await response.json().catch(() => ({error: `HTTP error! status: ${response.status}`})); throw new Error(err.error); }
+            if (response.status === 204) return null;
+            return response.json();
+        },
+        getPrompts: () => API._fetch('/api/prompts'),
+        addPrompt: (data) => API._fetch('/api/prompts', { method: 'POST', body: JSON.stringify(data) }),
+        deletePrompt: (id) => API._fetch(`/api/prompts/${id}`, { method: 'DELETE' }),
+        saveState: (data) => API._fetch('/api/state', { method: 'POST', body: JSON.stringify(data) }),
+        generatePrompt: (data) => API._fetch('/api/generate-prompt', { method: 'POST', body: JSON.stringify(data) }),
+        getScenarios: () => API._fetch('/api/scenarios'),
+        saveScenario: (data) => API._fetch('/api/scenarios', { method: 'POST', body: JSON.stringify(data) }),
+        deleteScenario: (id) => API._fetch(`/api/scenarios/${id}`, { method: 'DELETE' }),
+        clearAutosave: () => API._fetch('/api/scenarios/new', { method: 'POST' }),
     };
-    
-    init();
-});
+
+    return { init: Controller.init.bind(Controller) };
+})();
+
+document.addEventListener('DOMContentLoaded', ReportEngine.init);
